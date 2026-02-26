@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Tracker Prototype v7</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="hero">
+            <p class="eyebrow">Movie Finder</p>
+            <h1>Find a film and see where it is streaming</h1>
+            <p class="hero-copy">Search by title, scan rich cards quickly, then jump to trailers or streaming providers in one click.</p>
+        </header>
+
+        <section class="search-panel" aria-label="Movie search">
+            <form id="searchForm" class="search-row">
+                <label class="sr-only" for="searchInput">Movie title</label>
+                <input type="text" id="searchInput" placeholder="Search for a movie (e.g., Friday the 13th)..." autocomplete="off">
+                <button id="searchButton" class="primary-btn" type="submit">Search</button>
+            </form>
+            <p class="search-hint">Try: Scream, Alien, The Thing, Hereditary</p>
+        </section>
+
+        <section class="results-section" aria-label="Search results">
+            <div class="results-head">
+                <h2>Results</h2>
+                <p id="resultsMeta" class="results-meta">Search for a title to begin.</p>
+            </div>
+            <div id="results" class="results-grid" aria-live="polite"></div>
+        </section>
+    </main>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>

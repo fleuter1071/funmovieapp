@@ -1,0 +1,13 @@
+{
+  "name": "movie-fun-codex",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
