@@ -154,15 +154,57 @@ export function renderStreamingProviders(dataBox, providers) {
     const heading = document.createElement("strong");
     heading.textContent = "Streaming On:";
 
-    const badgesWrap = document.createElement("div");
-    badgesWrap.className = "badges";
+    const hint = document.createElement("p");
+    hint.className = "streaming-hint";
+    hint.textContent = "Tap a platform logo to open this movie on that service (new tab).";
 
-    providers.forEach((provider) => {
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = provider;
-        badgesWrap.appendChild(badge);
+    const providerGrid = document.createElement("div");
+    providerGrid.className = "provider-grid";
+
+    providers.forEach((rawProvider) => {
+        const provider = typeof rawProvider === "string" ? {
+            name: rawProvider,
+            logoUrl: "",
+            movieUrl: "",
+            availabilityType: "stream",
+            isClickable: false
+        } : rawProvider;
+
+        const isLink = Boolean(provider.isClickable && provider.movieUrl);
+        const item = document.createElement(isLink ? "a" : "div");
+        item.className = `provider-item${isLink ? "" : " is-disabled"}`;
+
+        if (isLink) {
+            item.href = provider.movieUrl;
+            item.target = "_blank";
+            item.rel = "noopener noreferrer";
+            item.setAttribute("aria-label", `Open ${provider.name} for this movie (new tab)`);
+        } else {
+            item.setAttribute("aria-label", `${provider.name} link unavailable`);
+            item.title = "Direct movie link unavailable";
+        }
+
+        if (provider.logoUrl) {
+            const logo = document.createElement("img");
+            logo.className = "provider-logo";
+            logo.src = provider.logoUrl;
+            logo.alt = `${provider.name} logo`;
+            logo.loading = "lazy";
+            logo.referrerPolicy = "no-referrer";
+            item.appendChild(logo);
+        }
+
+        const name = document.createElement("span");
+        name.className = "provider-name";
+        name.textContent = provider.name;
+
+        const type = document.createElement("span");
+        type.className = "provider-type";
+        type.textContent = provider.availabilityType || "stream";
+
+        item.append(name, type);
+        providerGrid.appendChild(item);
     });
 
-    dataBox.append(heading, badgesWrap);
+    dataBox.append(heading, hint, providerGrid);
 }

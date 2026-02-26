@@ -8,19 +8,26 @@ const searchCache = new Map();
 const streamingCache = new Map();
 const trailerCache = new Map();
 
-const KNOWN_PLATFORMS = [
-    "Netflix",
-    "Hulu",
-    "Max",
-    "Amazon",
-    "Prime Video",
-    "Shudder",
-    "AMC+",
-    "Paramount+",
-    "Peacock",
-    "Tubi",
-    "Apple TV"
-];
+const PROVIDER_BRAND_DOMAIN_MAP = {
+    "Amazon Video": "amazon.com",
+    "Prime Video": "primevideo.com",
+    "Apple TV Store": "apple.com",
+    "Apple TV+": "apple.com",
+    "Google Play Movies": "play.google.com",
+    "YouTube": "youtube.com",
+    "YouTube Movies": "youtube.com",
+    "Netflix": "netflix.com",
+    "Hulu": "hulu.com",
+    "Max": "max.com",
+    "Disney Plus": "disneyplus.com",
+    "Paramount Plus": "paramountplus.com",
+    "Peacock Premium": "peacocktv.com",
+    "Tubi TV": "tubitv.com",
+    "MGM Plus": "mgmplus.com",
+    "AMC Plus Apple TV Channel ": "amcplus.com",
+    "Shudder Amazon Channel": "shudder.com",
+    "Fandango At Home": "vudu.com"
+};
 
 function readCache(cache, key) {
     const entry = cache.get(key);
@@ -122,6 +129,17 @@ function isPlayableMediaContentType(contentType) {
     return normalized.startsWith("video/") || normalized.includes("octet-stream");
 }
 
+function logTrailerDecision(requestId, details) {
+    const log = {
+        ts: new Date().toISOString(),
+        requestId,
+        event: "trailer_resolution",
+        ...details
+    };
+
+    console.log(JSON.stringify(log));
+}
+
 function buildYoutubeFallbackUrl(title) {
     const query = `${title || "movie"} trailer`;
     return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -138,28 +156,125 @@ function normalizeSearch(data) {
     })).filter((movie) => movie.imdbId && movie.title);
 }
 
-function collectPlatforms(obj, platforms) {
-    if (typeof obj === "string") {
-        KNOWN_PLATFORMS.forEach((platform) => {
-            if (obj.toLowerCase().includes(platform.toLowerCase())) {
-                platforms.add(platform);
+function isSafeHttpUrl(value) {
+    if (typeof value !== "string" || !value.trim()) {
+        return false;
+    }
+
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch (error) {
+        return false;
+    }
+}
+
+function inferAvailabilityType(rawType) {
+    const type = String(rawType || "").toUpperCase();
+
+    if (type.includes("CINEMA")) {
+        return "cinema";
+    }
+
+    if (type.includes("RENT")) {
+        return "rent";
+    }
+
+    if (type.includes("BUY")) {
+        return "buy";
+    }
+
+    if (type.includes("FREE") || type.includes("ADS")) {
+        return "free";
+    }
+
+    return "stream";
+}
+
+function getProviderLogoUrl(name, movieUrl) {
+    const mappedDomain = PROVIDER_BRAND_DOMAIN_MAP[name];
+    if (mappedDomain) {
+        return `https://logo.clearbit.com/${mappedDomain}`;
+    }
+
+    if (isSafeHttpUrl(movieUrl)) {
+        try {
+            const hostname = new URL(movieUrl).hostname.replace(/^www\./i, "");
+            if (hostname) {
+                return `https://logo.clearbit.com/${hostname}`;
             }
-        });
-        return;
+        } catch (error) {
+            return "";
+        }
     }
 
-    if (Array.isArray(obj)) {
-        obj.forEach((item) => collectPlatforms(item, platforms));
-        return;
+    return "";
+}
+
+function normalizeOffer(offer) {
+    const name = String(offer?.name || "").trim();
+    const movieUrl = String(offer?.url || "").trim();
+
+    if (!name || !isSafeHttpUrl(movieUrl)) {
+        return null;
     }
 
-    if (obj && typeof obj === "object") {
-        if (typeof obj.provider_name === "string" && obj.provider_name.trim()) {
-            platforms.add(obj.provider_name.trim());
+    return {
+        name,
+        logoUrl: getProviderLogoUrl(name, movieUrl),
+        movieUrl,
+        availabilityType: inferAvailabilityType(offer?.type),
+        isClickable: true
+    };
+}
+
+function pickBestDescription(rows, imdbId) {
+    if (!rows.length) {
+        return null;
+    }
+
+    if (imdbId) {
+        const exact = rows.find((row) => String(row?.imdbId || "").toLowerCase() === String(imdbId).toLowerCase());
+        if (exact) {
+            return exact;
+        }
+    }
+
+    return rows[0];
+}
+
+function dedupeProviders(offers) {
+    const typePriority = {
+        stream: 1,
+        free: 2,
+        rent: 3,
+        buy: 4,
+        cinema: 5
+    };
+    const byName = new Map();
+
+    for (const offer of offers) {
+        const existing = byName.get(offer.name);
+        if (!existing) {
+            byName.set(offer.name, offer);
+            continue;
         }
 
-        Object.values(obj).forEach((value) => collectPlatforms(value, platforms));
+        const currentRank = typePriority[offer.availabilityType] || 99;
+        const existingRank = typePriority[existing.availabilityType] || 99;
+        if (currentRank < existingRank) {
+            byName.set(offer.name, offer);
+        }
     }
+
+    return Array.from(byName.values()).sort((a, b) => {
+        const rankA = typePriority[a.availabilityType] || 99;
+        const rankB = typePriority[b.availabilityType] || 99;
+        if (rankA !== rankB) {
+            return rankA - rankB;
+        }
+        return a.name.localeCompare(b.name);
+    });
 }
 
 async function searchMovies(query, ctx = {}) {
@@ -192,13 +307,15 @@ async function getStreamingProviders({ imdbId, title }, ctx = {}) {
     const url = `https://imdb.iamidiotareyoutoo.com/justwatch?q=${encodeURIComponent(normalizedTitle)}&L=en_US`;
     const upstream = await fetchJsonWithRetry(url, requestId);
 
-    const providersSet = new Set();
-    collectPlatforms(upstream, providersSet);
-    const providers = Array.from(providersSet).sort((a, b) => a.localeCompare(b));
+    const descriptions = Array.isArray(upstream?.description) ? upstream.description : [];
+    const selected = pickBestDescription(descriptions, imdbId);
+    const rawOffers = Array.isArray(selected?.offers) ? selected.offers : [];
+    const providers = dedupeProviders(rawOffers.map(normalizeOffer).filter(Boolean));
 
     const payload = {
         imdbId: imdbId || null,
         providers,
+        providersLegacy: providers.map((provider) => provider.name),
         region: "US",
         lastUpdated: new Date().toISOString()
     };
@@ -217,15 +334,24 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
         return cached;
     }
 
-    const fallback = {
+    const fallbackBase = {
         url: buildYoutubeFallbackUrl(normalizedTitle),
         source: "youtube-fallback",
         imdbId: imdbId || null
     };
 
     if (!imdbId) {
-        writeCache(trailerCache, cacheKey, fallback, TRAILER_CACHE_TTL_MS);
-        return fallback;
+        const payload = {
+            ...fallbackBase,
+            trailerDecisionReason: "missing_imdb_id"
+        };
+        logTrailerDecision(requestId, {
+            imdbId: null,
+            source: payload.source,
+            reason: payload.trailerDecisionReason
+        });
+        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        return payload;
     }
 
     try {
@@ -237,17 +363,45 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
             const payload = {
                 url: mediaUrl,
                 source: "free-movie-db",
-                imdbId
+                imdbId,
+                trailerDecisionReason: "playable_media_content_type"
             };
+            logTrailerDecision(requestId, {
+                imdbId,
+                source: payload.source,
+                reason: payload.trailerDecisionReason,
+                contentType
+            });
             writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
             return payload;
         }
-    } catch (error) {
-        // Fall back to YouTube if upstream media validation fails.
-    }
 
-    writeCache(trailerCache, cacheKey, fallback, TRAILER_CACHE_TTL_MS);
-    return fallback;
+        const payload = {
+            ...fallbackBase,
+            trailerDecisionReason: "non_playable_media_content_type"
+        };
+        logTrailerDecision(requestId, {
+            imdbId,
+            source: payload.source,
+            reason: payload.trailerDecisionReason,
+            contentType
+        });
+        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        return payload;
+    } catch (error) {
+        const payload = {
+            ...fallbackBase,
+            trailerDecisionReason: "media_head_request_failed"
+        };
+        logTrailerDecision(requestId, {
+            imdbId,
+            source: payload.source,
+            reason: payload.trailerDecisionReason,
+            error: String(error?.message || error)
+        });
+        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        return payload;
+    }
 }
 
 module.exports = {

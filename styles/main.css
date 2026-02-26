@@ -321,6 +321,70 @@ h2 {
     display: block;
 }
 
+.streaming-hint {
+    margin: var(--space-2) 0 var(--space-3);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.45rem;
+}
+
+.provider-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
+    min-height: 84px;
+    padding: 0.45rem 0.42rem;
+    border-radius: 10px;
+    border: 1px solid rgba(173, 192, 212, 0.22);
+    background: rgba(17, 31, 46, 0.9);
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: transform var(--transition-fast), filter var(--transition-fast), border-color var(--transition-fast);
+}
+
+.provider-item:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+    border-color: rgba(255, 90, 36, 0.42);
+}
+
+.provider-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px var(--ring);
+}
+
+.provider-item.is-disabled {
+    opacity: 0.68;
+    cursor: not-allowed;
+}
+
+.provider-logo {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+    display: block;
+}
+
+.provider-name {
+    text-align: center;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.provider-type {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.62rem;
+    color: var(--text-muted);
+}
+
 .badges {
     margin-top: var(--space-2);
     display: flex;
