@@ -1,5 +1,7 @@
 import { NO_POSTER_URL } from "../config.js";
 
+const IMDB_LOGO_SRC = "/src/assets/IMDBlogos/IMDb_PrimaryLogo_Black.svg";
+
 export function renderStatus(container, message, kind = "") {
     container.innerHTML = "";
     const p = document.createElement("p");
@@ -67,7 +69,7 @@ export function renderMovies(container, movies) {
 
         const trailerBtn = document.createElement("button");
         trailerBtn.type = "button";
-        trailerBtn.className = "action-btn";
+        trailerBtn.className = "action-btn trailer-btn";
         trailerBtn.dataset.action = "trailer";
         trailerBtn.textContent = "Watch Trailer";
 
@@ -77,11 +79,55 @@ export function renderMovies(container, movies) {
         streamBtn.dataset.action = "streaming";
         streamBtn.textContent = "Where to Watch";
 
+        const imdbId = String(movie.imdbId || "").trim();
+        const imdbUrl = imdbId ? `https://www.imdb.com/title/${encodeURIComponent(imdbId)}/` : "";
+        const imdbLogo = document.createElement("img");
+        imdbLogo.src = IMDB_LOGO_SRC;
+        imdbLogo.alt = "";
+        imdbLogo.setAttribute("aria-hidden", "true");
+
+        let imdbControl;
+
+        if (imdbUrl) {
+            const imdbLink = document.createElement("a");
+            imdbLink.className = "action-btn imdb-btn";
+            imdbLink.href = imdbUrl;
+            imdbLink.target = "_blank";
+            imdbLink.rel = "noopener noreferrer";
+            imdbLink.setAttribute("aria-label", `View ${movie.title} on IMDb (opens in a new tab)`);
+            imdbLink.title = "Opens in a new tab";
+
+            const imdbLabel = document.createElement("span");
+            imdbLabel.className = "imdb-label";
+            imdbLabel.textContent = "View on IMDb";
+
+            const imdbMeta = document.createElement("span");
+            imdbMeta.className = "imdb-meta";
+            imdbMeta.textContent = "(new tab)";
+
+            imdbLink.append(imdbLogo, imdbLabel, imdbMeta);
+            imdbControl = imdbLink;
+        } else {
+            const imdbButton = document.createElement("button");
+            imdbButton.type = "button";
+            imdbButton.className = "action-btn imdb-btn";
+            imdbButton.disabled = true;
+            imdbButton.setAttribute("aria-label", "IMDb link unavailable");
+            imdbButton.title = "IMDb link unavailable";
+
+            const imdbLabel = document.createElement("span");
+            imdbLabel.className = "imdb-label";
+            imdbLabel.textContent = "IMDb unavailable";
+
+            imdbButton.append(imdbLogo, imdbLabel);
+            imdbControl = imdbButton;
+        }
+
         const dataBox = document.createElement("div");
         dataBox.className = "data-box";
 
         posterWrap.appendChild(img);
-        actions.append(trailerBtn, streamBtn);
+        actions.append(trailerBtn, streamBtn, imdbControl);
         card.append(posterWrap, title, year, actions, dataBox);
         fragment.appendChild(card);
     });

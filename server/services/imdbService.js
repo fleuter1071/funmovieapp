@@ -219,26 +219,16 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
         return fallback;
     }
 
-    try {
-        const mediaUrl = `https://imdb.iamidiotareyoutoo.com/media/${encodeURIComponent(imdbId)}`;
-        const response = await fetchHeadWithRetry(mediaUrl, requestId);
-        const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-
-        if (contentType.startsWith("video/")) {
-            const payload = {
-                url: mediaUrl,
-                source: "free-movie-db",
-                imdbId
-            };
-            writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
-            return payload;
-        }
-    } catch (error) {
-        // Fall through to YouTube fallback for resiliency.
-    }
-
-    writeCache(trailerCache, cacheKey, fallback, TRAILER_CACHE_TTL_MS);
-    return fallback;
+    // Return the media endpoint directly when imdbId exists.
+    // Server-side HEAD probes can fail in some local/network environments
+    // even when the client browser can open the URL.
+    const payload = {
+        url: `https://imdb.iamidiotareyoutoo.com/media/${encodeURIComponent(imdbId)}`,
+        source: "free-movie-db",
+        imdbId
+    };
+    writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+    return payload;
 }
 
 module.exports = {

@@ -1,7 +1,37 @@
+const fs = require("node:fs");
 const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
 const { searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
+
+function loadEnvFromFile(filePath) {
+    if (!fs.existsSync(filePath)) {
+        return;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf8");
+    const lines = raw.split(/\r?\n/);
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+            continue;
+        }
+
+        const separator = trimmed.indexOf("=");
+        if (separator <= 0) {
+            continue;
+        }
+
+        const key = trimmed.slice(0, separator).trim();
+        const value = trimmed.slice(separator + 1).trim();
+        if (!process.env[key]) {
+            process.env[key] = value;
+        }
+    }
+}
+
+loadEnvFromFile(path.resolve(__dirname, "../.env"));
 
 const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const RATE_WINDOW_MS = 60 * 1000;
