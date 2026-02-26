@@ -194,14 +194,14 @@ function inferAvailabilityType(rawType) {
 function getProviderLogoUrl(name, movieUrl) {
     const mappedDomain = PROVIDER_BRAND_DOMAIN_MAP[name];
     if (mappedDomain) {
-        return `https://logo.clearbit.com/${mappedDomain}`;
+        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(mappedDomain)}&sz=64`;
     }
 
     if (isSafeHttpUrl(movieUrl)) {
         try {
             const hostname = new URL(movieUrl).hostname.replace(/^www\./i, "");
             if (hostname) {
-                return `https://logo.clearbit.com/${hostname}`;
+                return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`;
             }
         } catch (error) {
             return "";

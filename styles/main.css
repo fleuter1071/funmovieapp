@@ -349,6 +349,10 @@ h2 {
     transition: transform var(--transition-fast), filter var(--transition-fast), border-color var(--transition-fast);
 }
 
+.provider-item.no-logo {
+    padding-top: 0.7rem;
+}
+
 .provider-item:hover {
     filter: brightness(1.08);
     transform: translateY(-1px);

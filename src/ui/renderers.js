@@ -190,7 +190,11 @@ export function renderStreamingProviders(dataBox, providers) {
             logo.src = provider.logoUrl;
             logo.alt = `${provider.name} logo`;
             logo.loading = "lazy";
-            logo.referrerPolicy = "no-referrer";
+            logo.decoding = "async";
+            logo.addEventListener("error", () => {
+                logo.remove();
+                item.classList.add("no-logo");
+            });
             item.appendChild(logo);
         }
 
