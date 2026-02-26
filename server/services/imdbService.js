@@ -113,6 +113,15 @@ async function fetchHeadWithRetry(url, requestId) {
     throw lastError || new Error("Unknown upstream error");
 }
 
+function isPlayableMediaContentType(contentType) {
+    if (!contentType) {
+        return false;
+    }
+
+    const normalized = String(contentType).toLowerCase();
+    return normalized.startsWith("video/") || normalized.includes("octet-stream");
+}
+
 function buildYoutubeFallbackUrl(title) {
     const query = `${title || "movie"} trailer`;
     return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -219,16 +228,26 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
         return fallback;
     }
 
-    // Return the media endpoint directly when imdbId exists.
-    // Server-side HEAD probes can fail in some local/network environments
-    // even when the client browser can open the URL.
-    const payload = {
-        url: `https://imdb.iamidiotareyoutoo.com/media/${encodeURIComponent(imdbId)}`,
-        source: "free-movie-db",
-        imdbId
-    };
-    writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
-    return payload;
+    try {
+        const mediaUrl = `https://imdb.iamidiotareyoutoo.com/media/${encodeURIComponent(imdbId)}`;
+        const response = await fetchHeadWithRetry(mediaUrl, requestId);
+        const contentType = String(response.headers.get("content-type") || "");
+
+        if (isPlayableMediaContentType(contentType)) {
+            const payload = {
+                url: mediaUrl,
+                source: "free-movie-db",
+                imdbId
+            };
+            writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+            return payload;
+        }
+    } catch (error) {
+        // Fall back to YouTube if upstream media validation fails.
+    }
+
+    writeCache(trailerCache, cacheKey, fallback, TRAILER_CACHE_TTL_MS);
+    return fallback;
 }
 
 module.exports = {
