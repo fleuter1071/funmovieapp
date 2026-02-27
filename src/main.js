@@ -60,12 +60,26 @@ async function handleSearch() {
 }
 
 async function openTrailer(imdbId, title) {
+    const popup = window.open("about:blank", "_blank");
+
+    if (!popup) {
+        const query = `${title || "movie"} trailer`;
+        window.location.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+        return;
+    }
+
+    try {
+        popup.opener = null;
+    } catch (error) {
+        // Ignore if browser prevents setting opener.
+    }
+
     try {
         const payload = await getTrailerInfo(imdbId, title);
         const url = payload?.data?.url;
 
         if (url) {
-            window.open(url, "_blank", "noopener");
+            popup.location.replace(url);
             return;
         }
     } catch (error) {
@@ -73,7 +87,7 @@ async function openTrailer(imdbId, title) {
     }
 
     const query = `${title || "movie"} trailer`;
-    window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, "_blank", "noopener");
+    popup.location.replace(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
 }
 
 async function handleStreaming(card, button) {
