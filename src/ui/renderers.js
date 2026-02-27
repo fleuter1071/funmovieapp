@@ -64,6 +64,10 @@ export function renderMovies(container, movies) {
         year.className = "movie-year";
         year.textContent = movie.year || "Year not available";
 
+        const streamingSummary = document.createElement("p");
+        streamingSummary.className = "movie-streaming-summary";
+        streamingSummary.textContent = "Tap Where to Watch for availability";
+
         const actions = document.createElement("div");
         actions.className = "actions";
 
@@ -128,7 +132,7 @@ export function renderMovies(container, movies) {
 
         posterWrap.appendChild(img);
         actions.append(trailerBtn, streamBtn, imdbControl);
-        card.append(posterWrap, title, year, actions, dataBox);
+        card.append(posterWrap, title, year, streamingSummary, actions, dataBox);
         fragment.appendChild(card);
     });
 

@@ -12,6 +12,7 @@ const searchInput = document.getElementById("searchInput");
 const searchButton = document.getElementById("searchButton");
 const results = document.getElementById("results");
 const resultsMeta = document.getElementById("resultsMeta");
+const buttonResetTimers = new WeakMap();
 
 function setResultsMeta(message) {
     if (resultsMeta) {
@@ -79,6 +80,7 @@ async function handleStreaming(card, button) {
     const imdbId = card.dataset.imdbId || "";
     const title = card.dataset.title || "";
     const dataBox = card.querySelector(".data-box");
+    const summary = card.querySelector(".movie-streaming-summary");
 
     if (!dataBox || !button) {
         return;
@@ -93,11 +95,47 @@ async function handleStreaming(card, button) {
         const payload = await getStreamingInfo(imdbId, title);
         const providers = payload?.data?.providers || [];
         renderStreamingProviders(dataBox, providers);
+
+        if (summary) {
+            const normalized = providers.map((provider) => {
+                if (typeof provider === "string") {
+                    return { name: provider, availabilityType: "stream" };
+                }
+                return provider;
+            });
+
+            const subscriptionLike = normalized.find((provider) => provider.availabilityType === "stream" || provider.availabilityType === "free");
+            if (subscriptionLike?.name) {
+                summary.textContent = `Popular on: ${subscriptionLike.name}`;
+            } else if (normalized[0]?.name) {
+                const type = normalized[0].availabilityType || "stream";
+                summary.textContent = `Available to ${type} on ${normalized[0].name}`;
+            } else {
+                summary.textContent = "No major subscription platforms right now";
+            }
+        }
+
+        button.textContent = "Updated";
     } catch (error) {
         renderStreamingStatus(dataBox, "Unable to pull streaming data right now.");
+        if (summary) {
+            summary.textContent = "Availability check failed - try again";
+        }
+        button.textContent = "Try Again";
     } finally {
         button.disabled = false;
-        button.textContent = previousLabel;
+
+        const existingTimer = buttonResetTimers.get(button);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        const timerId = setTimeout(() => {
+            if (button.isConnected) {
+                button.textContent = previousLabel;
+            }
+        }, 1500);
+        buttonResetTimers.set(button, timerId);
     }
 }
 

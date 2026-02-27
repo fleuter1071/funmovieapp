@@ -221,6 +221,13 @@ h2 {
     font-size: 0.9rem;
 }
 
+.movie-streaming-summary {
+    margin: calc(var(--space-2) * -1) 0 var(--space-4);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    min-height: 1.1rem;
+}
+
 .actions {
     display: grid;
     gap: var(--space-2);
@@ -315,6 +322,8 @@ h2 {
     display: none;
     color: var(--text-secondary);
     border: 1px solid rgba(173, 192, 212, 0.15);
+    max-height: 260px;
+    overflow: auto;
 }
 
 .data-box.visible {
@@ -507,5 +516,9 @@ h2 {
 
     .results-grid {
         grid-template-columns: 1fr;
+    }
+
+    .data-box {
+        max-height: 220px;
     }
 }
