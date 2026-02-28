@@ -155,28 +155,75 @@ export function renderStreamingProviders(dataBox, providers) {
         return;
     }
 
+    const normalizedProviders = providers.map((rawProvider) => {
+        if (typeof rawProvider === "string") {
+            return {
+                name: rawProvider,
+                logoUrl: "",
+                movieUrl: "",
+                availabilityType: "stream",
+                isClickable: false
+            };
+        }
+        return rawProvider;
+    });
+
+    const bucketOrder = ["included", "rent", "buy", "other"];
+    const buckets = new Map(bucketOrder.map((key) => [key, []]));
+    const classifyProvider = (provider) => {
+        const type = String(provider.availabilityType || "").toLowerCase();
+        if (type === "stream" || type === "free" || type === "subscription") return "included";
+        if (type === "rent") return "rent";
+        if (type === "buy") return "buy";
+        return "other";
+    };
+
+    normalizedProviders.forEach((provider) => {
+        buckets.get(classifyProvider(provider)).push(provider);
+    });
+
+    const rankedProviders = bucketOrder.flatMap((bucket) => buckets.get(bucket));
+    const featuredProviders = [];
+    const featuredNames = new Set();
+    const pushFeatured = (provider) => {
+        if (!provider) return;
+        const key = String(provider.name || "").toLowerCase();
+        if (featuredNames.has(key)) return;
+        featuredProviders.push(provider);
+        featuredNames.add(key);
+    };
+
+    pushFeatured(buckets.get("included")[0]);
+    pushFeatured(buckets.get("rent")[0]);
+    pushFeatured(buckets.get("buy")[0]);
+    pushFeatured(buckets.get("other")[0]);
+    if (!featuredProviders.length) {
+        pushFeatured(rankedProviders[0]);
+    }
+    while (featuredProviders.length < 2) {
+        const candidate = rankedProviders.find((provider) => !featuredNames.has(String(provider.name || "").toLowerCase()));
+        if (!candidate) break;
+        pushFeatured(candidate);
+    }
+
+    const remainingProviders = rankedProviders.filter((provider) => !featuredNames.has(String(provider.name || "").toLowerCase()));
+
     const heading = document.createElement("strong");
-    heading.textContent = "Streaming On:";
+    heading.textContent = "Smart Watch Options:";
 
     const hint = document.createElement("p");
     hint.className = "streaming-hint";
-    hint.textContent = "Tap a platform logo to open this movie on that service (new tab).";
+    hint.textContent = remainingProviders.length
+        ? "Best options first. Tap More options for all platforms."
+        : "Best options first. Tap a platform to open this movie (new tab).";
 
-    const providerGrid = document.createElement("div");
-    providerGrid.className = "provider-grid";
+    const featuredGrid = document.createElement("div");
+    featuredGrid.className = "provider-grid provider-grid-featured";
 
-    providers.forEach((rawProvider) => {
-        const provider = typeof rawProvider === "string" ? {
-            name: rawProvider,
-            logoUrl: "",
-            movieUrl: "",
-            availabilityType: "stream",
-            isClickable: false
-        } : rawProvider;
-
+    const renderProvider = (provider, container, isFeatured = false) => {
         const isLink = Boolean(provider.isClickable && provider.movieUrl);
         const item = document.createElement(isLink ? "a" : "div");
-        item.className = `provider-item${isLink ? "" : " is-disabled"}`;
+        item.className = `provider-item${isFeatured ? " provider-item-featured" : ""}${isLink ? "" : " is-disabled"}`;
 
         if (isLink) {
             item.href = provider.movieUrl;
@@ -211,8 +258,40 @@ export function renderStreamingProviders(dataBox, providers) {
         type.textContent = provider.availabilityType || "stream";
 
         item.append(name, type);
-        providerGrid.appendChild(item);
+        container.appendChild(item);
+    };
+
+    featuredProviders.forEach((provider) => renderProvider(provider, featuredGrid, true));
+
+    dataBox.append(heading, hint, featuredGrid);
+
+    if (!remainingProviders.length) {
+        return;
+    }
+
+    const moreButton = document.createElement("button");
+    moreButton.type = "button";
+    moreButton.className = "streaming-more-btn";
+    moreButton.textContent = `More options (${remainingProviders.length})`;
+    moreButton.setAttribute("aria-expanded", "false");
+
+    const remainingWrap = document.createElement("div");
+    remainingWrap.className = "streaming-more-wrap";
+    remainingWrap.hidden = true;
+
+    const providerGrid = document.createElement("div");
+    providerGrid.className = "provider-grid";
+    remainingProviders.forEach((provider) => renderProvider(provider, providerGrid, false));
+    remainingWrap.appendChild(providerGrid);
+
+    moreButton.addEventListener("click", () => {
+        const isOpen = !remainingWrap.hidden;
+        remainingWrap.hidden = isOpen;
+        moreButton.setAttribute("aria-expanded", isOpen ? "false" : "true");
+        moreButton.textContent = isOpen
+            ? `More options (${remainingProviders.length})`
+            : "Hide extra options";
     });
 
-    dataBox.append(heading, hint, providerGrid);
+    dataBox.append(moreButton, remainingWrap);
 }

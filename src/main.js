@@ -118,12 +118,23 @@ async function handleStreaming(card, button) {
                 return provider;
             });
 
-            const subscriptionLike = normalized.find((provider) => provider.availabilityType === "stream" || provider.availabilityType === "free");
-            if (subscriptionLike?.name) {
-                summary.textContent = `Popular on: ${subscriptionLike.name}`;
-            } else if (normalized[0]?.name) {
-                const type = normalized[0].availabilityType || "stream";
-                summary.textContent = `Available to ${type} on ${normalized[0].name}`;
+            const typeRank = { stream: 0, free: 0, subscription: 0, rent: 1, buy: 2 };
+            const ranked = [...normalized].sort((a, b) => {
+                const aType = String(a?.availabilityType || "").toLowerCase();
+                const bType = String(b?.availabilityType || "").toLowerCase();
+                const aRank = Object.hasOwn(typeRank, aType) ? typeRank[aType] : 3;
+                const bRank = Object.hasOwn(typeRank, bType) ? typeRank[bType] : 3;
+                return aRank - bRank;
+            });
+            const best = ranked[0];
+
+            if (best?.name) {
+                const type = String(best.availabilityType || "stream").toLowerCase();
+                if (type === "stream" || type === "free" || type === "subscription") {
+                    summary.textContent = `Best value: ${best.name} (included)`;
+                } else {
+                    summary.textContent = `Best option: ${best.name} (${type})`;
+                }
             } else {
                 summary.textContent = "No major subscription platforms right now";
             }
