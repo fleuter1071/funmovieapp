@@ -14,6 +14,13 @@ const results = document.getElementById("results");
 const resultsMeta = document.getElementById("resultsMeta");
 const buttonResetTimers = new WeakMap();
 
+function trackEvent(name, params = {}) {
+    if (typeof window.gtag !== "function") {
+        return;
+    }
+    window.gtag("event", name, params);
+}
+
 function setResultsMeta(message) {
     if (resultsMeta) {
         resultsMeta.textContent = message;
@@ -36,6 +43,7 @@ async function handleSearch() {
     }
 
     setSearchPending(true);
+    trackEvent("search", { search_query: query });
     setResultsMeta(`Searching for "${query}"...`);
     renderLoadingSkeletons(results, 6);
 
@@ -185,11 +193,44 @@ results.addEventListener("click", (event) => {
     const action = button.dataset.action;
 
     if (action === "trailer") {
+        trackEvent("watch_trailer_click", {
+            movie_title: card.dataset.title || "",
+            imdb_id: card.dataset.imdbId || ""
+        });
         openTrailer(card.dataset.imdbId || "", card.dataset.title || "");
         return;
     }
 
     if (action === "streaming") {
+        trackEvent("where_to_watch_click", {
+            movie_title: card.dataset.title || "",
+            imdb_id: card.dataset.imdbId || ""
+        });
         handleStreaming(card, button);
+    }
+});
+
+results.addEventListener("click", (event) => {
+    const imdbLink = event.target.closest("a.imdb-btn");
+    if (imdbLink) {
+        const card = imdbLink.closest(".movie-card");
+        trackEvent("imdb_click", {
+            movie_title: card?.dataset.title || "",
+            imdb_id: card?.dataset.imdbId || ""
+        });
+        return;
+    }
+
+    const providerLink = event.target.closest(".provider-item[href]");
+    if (providerLink) {
+        const card = providerLink.closest(".movie-card");
+        const providerName = providerLink.querySelector(".provider-name")?.textContent?.trim() || "";
+        const availabilityType = providerLink.querySelector(".provider-type")?.textContent?.trim() || "";
+        trackEvent("provider_click", {
+            movie_title: card?.dataset.title || "",
+            imdb_id: card?.dataset.imdbId || "",
+            provider_name: providerName,
+            availability_type: availabilityType
+        });
     }
 });
