@@ -27,6 +27,24 @@ function createMockServices() {
                 lastUpdated: "2026-02-25T00:00:00.000Z",
                 title
             };
+        },
+        async getCozinessRating(imdbId) {
+            if (imdbId === "tt0117571") {
+                return { imdbId, score: 7, updatedAt: "2026-03-02T00:00:00.000Z" };
+            }
+            return null;
+        },
+        async getCozinessRatingsBatch(imdbIds) {
+            const map = {};
+            for (const imdbId of imdbIds) {
+                if (imdbId === "tt0117571") {
+                    map[imdbId] = { imdbId, score: 7, updatedAt: "2026-03-02T00:00:00.000Z" };
+                }
+            }
+            return map;
+        },
+        async upsertCozinessRating(imdbId, score) {
+            return { imdbId, score, updatedAt: "2026-03-02T00:00:00.000Z" };
         }
     };
 }
@@ -138,6 +156,57 @@ test("GET /api/v1/trailer validates imdbId format", async () => {
 
         const payload = await response.json();
         assert.equal(payload.error.code, "INVALID_IMDB_ID");
+    });
+});
+
+test("GET /api/v1/coziness returns rating when present", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/coziness?imdbId=tt0117571`);
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.data.imdbId, "tt0117571");
+        assert.equal(payload.data.score, 7);
+    });
+});
+
+test("POST /api/v1/coziness/batch returns map for valid ids", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/coziness/batch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imdbIds: ["tt0117571", "tt0133093"] })
+        });
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.data.tt0117571.score, 7);
+        assert.equal(payload.data.tt0133093, undefined);
+    });
+});
+
+test("POST /api/v1/coziness validates score range", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/coziness`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imdbId: "tt0117571", score: 11 })
+        });
+        assert.equal(response.status, 400);
+        const payload = await response.json();
+        assert.equal(payload.error.code, "INVALID_SCORE");
+    });
+});
+
+test("POST /api/v1/coziness upserts valid payload", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/coziness`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imdbId: "tt0117571", score: 9 })
+        });
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.data.imdbId, "tt0117571");
+        assert.equal(payload.data.score, 9);
     });
 });
 

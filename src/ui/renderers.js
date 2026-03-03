@@ -46,8 +46,8 @@ export function renderMovies(container, movies) {
     movies.forEach((movie) => {
         const card = document.createElement("article");
         card.className = "movie-card";
-        card.dataset.imdbId = movie.imdbId;
-        card.dataset.title = movie.title;
+        card.dataset.imdbId = String(movie.imdbId || "").trim();
+        card.dataset.title = String(movie.title || "").trim();
 
         const posterWrap = document.createElement("div");
         posterWrap.className = "poster-wrap";
@@ -63,27 +63,40 @@ export function renderMovies(container, movies) {
         const year = document.createElement("p");
         year.className = "movie-year";
         year.textContent = movie.year || "Year not available";
+        const imdbId = String(movie.imdbId || "").trim();
 
         const streamingSummary = document.createElement("p");
         streamingSummary.className = "movie-streaming-summary";
-        streamingSummary.textContent = "Tap Where to Watch for availability";
+        streamingSummary.textContent = "";
 
         const actions = document.createElement("div");
         actions.className = "actions";
 
         const trailerBtn = document.createElement("button");
         trailerBtn.type = "button";
-        trailerBtn.className = "action-btn trailer-btn";
+        trailerBtn.className = "action-btn btn-primary trailer-btn";
         trailerBtn.dataset.action = "trailer";
         trailerBtn.textContent = "Watch Trailer";
 
         const streamBtn = document.createElement("button");
         streamBtn.type = "button";
-        streamBtn.className = "action-btn stream-btn";
+        streamBtn.className = "action-btn btn-secondary stream-btn";
         streamBtn.dataset.action = "streaming";
+        streamBtn.setAttribute("aria-expanded", "false");
         streamBtn.textContent = "Where to Watch";
 
-        const imdbId = String(movie.imdbId || "").trim();
+        const cozyToggleBtn = document.createElement("button");
+        cozyToggleBtn.type = "button";
+        cozyToggleBtn.className = "action-btn btn-tertiary cozy-btn";
+        cozyToggleBtn.dataset.action = "coziness-toggle";
+        cozyToggleBtn.setAttribute("aria-expanded", "false");
+        cozyToggleBtn.textContent = imdbId ? "☕ Rate Coziness ▼" : "Cozy Rating N/A";
+        cozyToggleBtn.disabled = !imdbId;
+        if (!imdbId) {
+            cozyToggleBtn.title = "IMDb ID required to save a coziness rating.";
+            cozyToggleBtn.setAttribute("aria-label", "Coziness rating unavailable");
+        }
+
         const imdbUrl = imdbId ? `https://www.imdb.com/title/${encodeURIComponent(imdbId)}/` : "";
         const imdbLogo = document.createElement("img");
         imdbLogo.src = IMDB_LOGO_SRC;
@@ -94,7 +107,7 @@ export function renderMovies(container, movies) {
 
         if (imdbUrl) {
             const imdbLink = document.createElement("a");
-            imdbLink.className = "action-btn imdb-btn";
+            imdbLink.className = "action-btn btn-utility imdb-btn";
             imdbLink.href = imdbUrl;
             imdbLink.target = "_blank";
             imdbLink.rel = "noopener noreferrer";
@@ -103,18 +116,14 @@ export function renderMovies(container, movies) {
 
             const imdbLabel = document.createElement("span");
             imdbLabel.className = "imdb-label";
-            imdbLabel.textContent = "View on IMDb";
+            imdbLabel.textContent = "IMDb";
 
-            const imdbMeta = document.createElement("span");
-            imdbMeta.className = "imdb-meta";
-            imdbMeta.textContent = "(new tab)";
-
-            imdbLink.append(imdbLogo, imdbLabel, imdbMeta);
+            imdbLink.append(imdbLogo, imdbLabel);
             imdbControl = imdbLink;
         } else {
             const imdbButton = document.createElement("button");
             imdbButton.type = "button";
-            imdbButton.className = "action-btn imdb-btn";
+            imdbButton.className = "action-btn btn-utility imdb-btn";
             imdbButton.disabled = true;
             imdbButton.setAttribute("aria-label", "IMDb link unavailable");
             imdbButton.title = "IMDb link unavailable";
@@ -130,13 +139,103 @@ export function renderMovies(container, movies) {
         const dataBox = document.createElement("div");
         dataBox.className = "data-box";
 
+        const cozinessBox = document.createElement("div");
+        cozinessBox.className = "coziness-box";
+
+        const cozinessHead = document.createElement("div");
+        cozinessHead.className = "coziness-head";
+
+        const cozinessLabel = document.createElement("p");
+        cozinessLabel.className = "coziness-label";
+        cozinessLabel.textContent = "Community Cozy Score";
+
+        const cozinessCurrent = document.createElement("span");
+        cozinessCurrent.className = "coziness-current";
+        cozinessCurrent.textContent = "Not rated";
+
+        cozinessHead.append(cozinessLabel, cozinessCurrent);
+
+        const chipGrid = document.createElement("div");
+        chipGrid.className = "cozy-chip-grid";
+        chipGrid.setAttribute("role", "radiogroup");
+        chipGrid.setAttribute("aria-label", `Select coziness score for ${movie.title}`);
+
+        for (let score = 1; score <= 10; score += 1) {
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "cozy-chip";
+            chip.dataset.action = "coziness-select";
+            chip.dataset.score = String(score);
+            chip.setAttribute("role", "radio");
+            chip.setAttribute("aria-checked", "false");
+            chip.textContent = String(score);
+            chipGrid.appendChild(chip);
+        }
+
+        const selectedText = document.createElement("span");
+        selectedText.className = "coziness-selected";
+        selectedText.textContent = "Select a score";
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "coziness-save-btn";
+        saveBtn.dataset.action = "coziness-save";
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Save rating";
+
+        const controls = document.createElement("div");
+        controls.className = "coziness-controls";
+        controls.append(selectedText, saveBtn);
+
+        const feedbackText = document.createElement("span");
+        feedbackText.className = "coziness-feedback";
+        feedbackText.setAttribute("aria-live", "polite");
+        feedbackText.textContent = "";
+
+        cozinessBox.append(cozinessHead, chipGrid, controls, feedbackText);
+
         posterWrap.appendChild(img);
-        actions.append(trailerBtn, streamBtn, imdbControl);
-        card.append(posterWrap, title, year, streamingSummary, actions, dataBox);
+        actions.append(trailerBtn, streamBtn, cozyToggleBtn, imdbControl);
+        if (imdbId) {
+            card.append(posterWrap, title, year, streamingSummary, actions, cozinessBox, dataBox);
+        } else {
+            card.append(posterWrap, title, year, streamingSummary, actions, dataBox);
+        }
         fragment.appendChild(card);
     });
 
     container.appendChild(fragment);
+}
+
+export function updateCardCoziness(card, score) {
+    const cozyToggleBtn = card.querySelector(".cozy-btn");
+    if (!cozyToggleBtn) {
+        return;
+    }
+    const imdbId = String(card.dataset.imdbId || "").trim();
+    if (!imdbId) {
+        cozyToggleBtn.disabled = true;
+        cozyToggleBtn.textContent = "Cozy Rating N/A";
+        delete card.dataset.cozinessScore;
+        return;
+    }
+    cozyToggleBtn.disabled = false;
+    const isExpanded = cozyToggleBtn.getAttribute("aria-expanded") === "true";
+    const arrow = isExpanded ? "▲" : "▼";
+
+    if (Number.isInteger(score) && score >= 1 && score <= 10) {
+        card.dataset.cozinessScore = String(score);
+        cozyToggleBtn.textContent = `☕ Cozy Rating: ${score}/10 ${arrow}`;
+    } else {
+        delete card.dataset.cozinessScore;
+        cozyToggleBtn.textContent = `☕ Rate Coziness ${arrow}`;
+    }
+    const cozyCurrent = card.querySelector(".coziness-current");
+    if (cozyCurrent) {
+        cozyCurrent.textContent = Number.isInteger(score) && score >= 1 && score <= 10
+            ? `Current ${score}/10`
+            : "Not rated";
+    }
 }
 
 export function renderStreamingStatus(dataBox, message) {

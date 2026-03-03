@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
 const { searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
+const { getCozinessRating, getCozinessRatingsBatch, upsertCozinessRating } = require("./services/cozinessStore");
 
 function loadEnvFromFile(filePath) {
     if (!fs.existsSync(filePath)) {
@@ -64,6 +65,10 @@ function isValidImdbId(value) {
 
 function isValidTextQuery(value) {
     return typeof value === "string" && value.trim().length > 0 && value.trim().length <= MAX_QUERY_LENGTH;
+}
+
+function isValidCozinessScore(value) {
+    return Number.isInteger(value) && value >= 1 && value <= 10;
 }
 
 function createRequestIdMiddleware() {
@@ -153,7 +158,16 @@ async function defaultReadinessCheck(ctx = {}) {
     }
 }
 
-function createApp(services = { searchMovies, getStreamingProviders, resolveTrailerUrl }) {
+function createApp(
+    services = {
+        searchMovies,
+        getStreamingProviders,
+        resolveTrailerUrl,
+        getCozinessRating,
+        getCozinessRatingsBatch,
+        upsertCozinessRating
+    }
+) {
     const app = express();
     const readinessCheck = typeof services.readinessCheck === "function" ? services.readinessCheck : defaultReadinessCheck;
 
@@ -263,6 +277,79 @@ function createApp(services = { searchMovies, getStreamingProviders, resolveTrai
         } catch (error) {
             logUpstreamError(req, "/api/v1/trailer", error);
             sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to resolve trailer URL.", true);
+        }
+    });
+
+    app.get("/api/v1/coziness", async (req, res) => {
+        const imdbId = String(req.query.imdbId || "").trim();
+
+        if (!isValidImdbId(imdbId)) {
+            sendError(res, req.requestId, 400, "INVALID_IMDB_ID", "imdbId must look like tt1234567.", false);
+            return;
+        }
+
+        try {
+            const data = await services.getCozinessRating(imdbId, { requestId: req.requestId });
+            res.json({ data, requestId: req.requestId });
+        } catch (error) {
+            if (error?.code === "COZINESS_NOT_CONFIGURED") {
+                sendError(res, req.requestId, 503, "COZINESS_UNAVAILABLE", "Coziness service is not configured.", false);
+                return;
+            }
+            logUpstreamError(req, "/api/v1/coziness", error);
+            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch coziness rating.", true);
+        }
+    });
+
+    app.post("/api/v1/coziness/batch", async (req, res) => {
+        const imdbIds = Array.isArray(req.body?.imdbIds)
+            ? req.body.imdbIds.map((id) => String(id || "").trim()).filter(Boolean)
+            : [];
+
+        if (!imdbIds.length || imdbIds.some((id) => !isValidImdbId(id))) {
+            sendError(res, req.requestId, 400, "INVALID_IMDB_ID", "imdbIds must be an array of valid IMDb IDs.", false);
+            return;
+        }
+
+        const uniqueImdbIds = [...new Set(imdbIds)];
+
+        try {
+            const data = await services.getCozinessRatingsBatch(uniqueImdbIds, { requestId: req.requestId });
+            res.json({ data, requestId: req.requestId });
+        } catch (error) {
+            if (error?.code === "COZINESS_NOT_CONFIGURED") {
+                sendError(res, req.requestId, 503, "COZINESS_UNAVAILABLE", "Coziness service is not configured.", false);
+                return;
+            }
+            logUpstreamError(req, "/api/v1/coziness/batch", error);
+            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch coziness ratings.", true);
+        }
+    });
+
+    app.post("/api/v1/coziness", async (req, res) => {
+        const imdbId = String(req.body?.imdbId || "").trim();
+        const score = Number(req.body?.score);
+
+        if (!isValidImdbId(imdbId)) {
+            sendError(res, req.requestId, 400, "INVALID_IMDB_ID", "imdbId must look like tt1234567.", false);
+            return;
+        }
+
+        if (!isValidCozinessScore(score)) {
+            sendError(res, req.requestId, 400, "INVALID_SCORE", "score must be an integer between 1 and 10.", false);
+            return;
+        }
+
+        try {
+            const data = await services.upsertCozinessRating(imdbId, score, { requestId: req.requestId });
+            res.json({ data, requestId: req.requestId });
+        } catch (error) {
+            if (error?.code === "COZINESS_NOT_CONFIGURED") {
+                sendError(res, req.requestId, 503, "COZINESS_UNAVAILABLE", "Coziness service is not configured.", false);
+                return;
+            }
+            logUpstreamError(req, "/api/v1/coziness", error);
+            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to save coziness rating.", true);
         }
     });
 

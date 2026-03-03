@@ -4,3 +4,6 @@ npm-debug.log*
 .env.*
 !.env.example
 server-run.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

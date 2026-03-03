@@ -1,11 +1,12 @@
 import { API_BASE, REQUEST_TIMEOUT_MS } from "../config.js";
 
-async function fetchJson(path) {
+async function fetchJson(path, options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
         const response = await fetch(`${API_BASE}${path}`, {
+            ...options,
             signal: controller.signal
         });
 
@@ -32,4 +33,24 @@ export async function getStreamingInfo(imdbId, title) {
 
 export async function getTrailerInfo(imdbId, title) {
     return fetchJson(`/trailer?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}`);
+}
+
+export async function getCozinessRatingsBatch(imdbIds) {
+    return fetchJson("/coziness/batch", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ imdbIds })
+    });
+}
+
+export async function saveCozinessRating(imdbId, score) {
+    return fetchJson("/coziness", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ imdbId, score })
+    });
 }

@@ -1,10 +1,11 @@
-import { getStreamingInfo, getTrailerInfo, searchMovies } from "./api/client.js";
+import { getCozinessRatingsBatch, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
 import {
     renderLoadingSkeletons,
     renderMovies,
     renderStatus,
     renderStreamingProviders,
-    renderStreamingStatus
+    renderStreamingStatus,
+    updateCardCoziness
 } from "./ui/renderers.js";
 
 const searchForm = document.getElementById("searchForm");
@@ -12,7 +13,7 @@ const searchInput = document.getElementById("searchInput");
 const searchButton = document.getElementById("searchButton");
 const results = document.getElementById("results");
 const resultsMeta = document.getElementById("resultsMeta");
-const buttonResetTimers = new WeakMap();
+const cozyAutoCloseTimers = new WeakMap();
 
 function trackEvent(name, params = {}) {
     if (typeof window.gtag !== "function") {
@@ -31,6 +32,230 @@ function setSearchPending(isPending) {
     searchButton.disabled = isPending;
     searchButton.textContent = isPending ? "Searching..." : "Search";
     results.setAttribute("aria-busy", isPending ? "true" : "false");
+}
+
+function closeCozinessPanel(card) {
+    const cozyBox = card.querySelector(".coziness-box");
+    const cozyToggleBtn = card.querySelector(".cozy-btn");
+
+    if (!cozyBox || !cozyToggleBtn) {
+        return;
+    }
+
+    cozyBox.classList.remove("visible");
+    cozyToggleBtn.setAttribute("aria-expanded", "false");
+    const score = Number(card.dataset.cozinessScore);
+    updateCardCoziness(card, Number.isInteger(score) ? score : null);
+}
+
+function clearCozinessAutoClose(card) {
+    const timerId = cozyAutoCloseTimers.get(card);
+    if (timerId) {
+        clearTimeout(timerId);
+        cozyAutoCloseTimers.delete(card);
+    }
+}
+
+function scheduleCozinessAutoClose(card, delayMs = 550) {
+    clearCozinessAutoClose(card);
+    const timerId = setTimeout(() => {
+        cozyAutoCloseTimers.delete(card);
+        if (!card.isConnected) {
+            return;
+        }
+        if (card.dataset.cozinessSaving === "1") {
+            return;
+        }
+        closeCozinessPanel(card);
+    }, delayMs);
+    cozyAutoCloseTimers.set(card, timerId);
+}
+
+function closeStreamingPanel(card) {
+    const dataBox = card.querySelector(".data-box");
+    const streamBtn = card.querySelector('button[data-action="streaming"]');
+    if (dataBox) {
+        dataBox.classList.remove("visible");
+    }
+    if (streamBtn) {
+        streamBtn.setAttribute("aria-expanded", "false");
+        streamBtn.textContent = "Where to Watch";
+    }
+}
+
+function openCozinessPanel(card) {
+    results.querySelectorAll(".movie-card").forEach((candidate) => {
+        if (candidate !== card) {
+            closeCozinessPanel(candidate);
+        }
+        closeStreamingPanel(candidate);
+    });
+
+    const cozyBox = card.querySelector(".coziness-box");
+    const cozyToggleBtn = card.querySelector(".cozy-btn");
+
+    if (!cozyBox || !cozyToggleBtn) {
+        return;
+    }
+
+    cozyBox.classList.add("visible");
+    cozyToggleBtn.setAttribute("aria-expanded", "true");
+    const score = Number(card.dataset.cozinessScore);
+    updateCardCoziness(card, Number.isInteger(score) ? score : null);
+    clearCozinessAutoClose(card);
+    setCozinessFeedback(card, "");
+}
+
+function applySelectedCozinessChip(card, score, options = {}) {
+    const isEditable = options.isEditable !== false;
+    const chips = card.querySelectorAll(".cozy-chip");
+    const selectedText = card.querySelector(".coziness-selected");
+    const saveBtn = card.querySelector(".coziness-save-btn");
+
+    chips.forEach((chip) => {
+        const isSelected = Number(chip.dataset.score) === score;
+        chip.classList.toggle("is-selected", isSelected);
+        chip.setAttribute("aria-checked", isSelected ? "true" : "false");
+    });
+
+    if (Number.isInteger(score)) {
+        clearCozinessAutoClose(card);
+        if (isEditable) {
+            card.dataset.pendingCozinessScore = String(score);
+        } else {
+            delete card.dataset.pendingCozinessScore;
+        }
+        if (selectedText) {
+            selectedText.textContent = isEditable ? `Selected: ${score}/10` : `Current: ${score}/10`;
+        }
+        if (saveBtn) {
+            saveBtn.disabled = !isEditable;
+        }
+    } else {
+        delete card.dataset.pendingCozinessScore;
+        if (selectedText) {
+            selectedText.textContent = "Select a score";
+        }
+        if (saveBtn) {
+            saveBtn.disabled = true;
+        }
+    }
+}
+
+function setCozinessFeedback(card, message = "", tone = "") {
+    const feedback = card.querySelector(".coziness-feedback");
+    if (!feedback) {
+        return;
+    }
+    feedback.textContent = message;
+    feedback.classList.remove("is-error", "is-success", "is-saving");
+    if (tone) {
+        feedback.classList.add(`is-${tone}`);
+    }
+}
+
+function persistCozinessSelection(card) {
+    const imdbId = String(card.dataset.imdbId || "").trim();
+    const score = Number(card.dataset.pendingCozinessScore);
+    if (!imdbId || !Number.isInteger(score) || score < 1 || score > 10) {
+        return;
+    }
+    if (card.dataset.cozinessSaving === "1") {
+        return;
+    }
+    const existingScore = Number(card.dataset.cozinessScore);
+    const previousScore = Number.isInteger(existingScore) && existingScore >= 1 && existingScore <= 10
+        ? existingScore
+        : null;
+
+    card.dataset.cozinessSaving = "1";
+    setCozinessFeedback(card, "Saving...", "saving");
+    const saveBtn = card.querySelector(".coziness-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = true;
+    }
+
+    saveCozinessRating(imdbId, score)
+        .then((payload) => {
+            const savedScore = Number(payload?.data?.score);
+            const nextScore = Number.isInteger(savedScore) && savedScore >= 1 && savedScore <= 10 ? savedScore : score;
+            updateCardCoziness(card, nextScore);
+            applySelectedCozinessChip(card, nextScore, { isEditable: false });
+            setCozinessFeedback(card, "Saved", "success");
+            scheduleCozinessAutoClose(card);
+
+            trackEvent("coziness_saved", {
+                movie_title: card.dataset.title || "",
+                imdb_id: imdbId,
+                score: nextScore
+            });
+        })
+        .catch(() => {
+            updateCardCoziness(card, previousScore);
+            applySelectedCozinessChip(card, previousScore, { isEditable: false });
+            setCozinessFeedback(card, "Could not save. Try again.", "error");
+        })
+        .finally(() => {
+            delete card.dataset.cozinessSaving;
+            if (saveBtn && saveBtn.isConnected) {
+                const pending = Number(card.dataset.pendingCozinessScore);
+                saveBtn.disabled = !Number.isInteger(pending);
+            }
+        });
+}
+
+function hydrateCozinessUiFromCard(card) {
+    const score = Number(card.dataset.cozinessScore);
+    if (Number.isInteger(score) && score >= 1 && score <= 10) {
+        applySelectedCozinessChip(card, score, { isEditable: false });
+    } else {
+        applySelectedCozinessChip(card, null);
+    }
+    clearCozinessAutoClose(card);
+    setCozinessFeedback(card, "");
+}
+
+function moveCozinessSelection(card, currentScore, delta) {
+    if (!Number.isInteger(currentScore) || currentScore < 1 || currentScore > 10) {
+        currentScore = 1;
+    }
+    const next = Math.max(1, Math.min(10, currentScore + delta));
+    applySelectedCozinessChip(card, next);
+    const nextChip = card.querySelector(`.cozy-chip[data-score="${next}"]`);
+    if (nextChip) {
+        nextChip.focus();
+    }
+}
+
+function hydrateAllCardCoziness() {
+    const cards = [...results.querySelectorAll(".movie-card[data-imdb-id]")];
+    const imdbIds = cards
+        .map((card) => String(card.dataset.imdbId || "").trim())
+        .filter(Boolean);
+
+    if (!imdbIds.length) {
+        return;
+    }
+
+    getCozinessRatingsBatch([...new Set(imdbIds)])
+        .then((payload) => {
+            const data = payload?.data || {};
+            cards.forEach((card) => {
+                const imdbId = String(card.dataset.imdbId || "").trim();
+                const score = Number(data?.[imdbId]?.score);
+                if (Number.isInteger(score) && score >= 1 && score <= 10) {
+                    updateCardCoziness(card, score);
+                } else {
+                    updateCardCoziness(card, null);
+                }
+                hydrateCozinessUiFromCard(card);
+            });
+        })
+        .catch(() => {
+            cards.forEach((card) => {
+                hydrateCozinessUiFromCard(card);
+            });
+        });
 }
 
 async function handleSearch() {
@@ -59,6 +284,7 @@ async function handleSearch() {
 
         setResultsMeta(`${movies.length} result${movies.length === 1 ? "" : "s"} found.`);
         renderMovies(results, movies);
+        hydrateAllCardCoziness();
     } catch (error) {
         setResultsMeta("Search unavailable.");
         renderStatus(results, "We could not reach the movie service. Please try again.", "error");
@@ -98,7 +324,7 @@ async function openTrailer(imdbId, title) {
     popup.location.replace(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
 }
 
-async function handleStreaming(card, button) {
+async function loadStreamingPanel(card, button) {
     const imdbId = card.dataset.imdbId || "";
     const title = card.dataset.title || "";
     const dataBox = card.querySelector(".data-box");
@@ -109,9 +335,9 @@ async function handleStreaming(card, button) {
     }
 
     button.disabled = true;
-    const previousLabel = button.textContent;
-    button.textContent = "Checking...";
+    button.textContent = "Loading...";
     renderStreamingStatus(dataBox, "Locating US streaming rights...");
+    dataBox.classList.add("visible");
 
     try {
         const payload = await getStreamingInfo(imdbId, title);
@@ -148,28 +374,46 @@ async function handleStreaming(card, button) {
             }
         }
 
-        button.textContent = "Updated";
+        dataBox.dataset.loaded = "1";
+        button.textContent = "Hide options";
     } catch (error) {
         renderStreamingStatus(dataBox, "Unable to pull streaming data right now.");
         if (summary) {
             summary.textContent = "Availability check failed - try again";
         }
-        button.textContent = "Try Again";
+        button.textContent = "Retry";
     } finally {
         button.disabled = false;
-
-        const existingTimer = buttonResetTimers.get(button);
-        if (existingTimer) {
-            clearTimeout(existingTimer);
-        }
-
-        const timerId = setTimeout(() => {
-            if (button.isConnected) {
-                button.textContent = previousLabel;
-            }
-        }, 1500);
-        buttonResetTimers.set(button, timerId);
     }
+}
+
+async function toggleStreamingPanel(card, button) {
+    const dataBox = card.querySelector(".data-box");
+    if (!dataBox || !button) {
+        return;
+    }
+
+    const isOpen = dataBox.classList.contains("visible");
+    if (isOpen) {
+        closeStreamingPanel(card);
+        return;
+    }
+
+    results.querySelectorAll(".movie-card").forEach((candidate) => {
+        if (candidate !== card) {
+            closeStreamingPanel(candidate);
+        }
+        closeCozinessPanel(candidate);
+    });
+    closeCozinessPanel(card);
+
+    button.setAttribute("aria-expanded", "true");
+    if (dataBox.dataset.loaded === "1") {
+        dataBox.classList.add("visible");
+        button.textContent = "Hide options";
+        return;
+    }
+    await loadStreamingPanel(card, button);
 }
 
 searchForm.addEventListener("submit", (event) => {
@@ -206,7 +450,79 @@ results.addEventListener("click", (event) => {
             movie_title: card.dataset.title || "",
             imdb_id: card.dataset.imdbId || ""
         });
-        handleStreaming(card, button);
+        toggleStreamingPanel(card, button);
+        return;
+    }
+
+    if (action === "coziness-toggle") {
+        const isOpen = button.getAttribute("aria-expanded") === "true";
+        if (isOpen) {
+            closeCozinessPanel(card);
+        } else {
+            openCozinessPanel(card);
+            hydrateCozinessUiFromCard(card);
+            trackEvent("coziness_panel_open", {
+                movie_title: card.dataset.title || "",
+                imdb_id: card.dataset.imdbId || ""
+            });
+        }
+        return;
+    }
+
+    if (action === "coziness-select") {
+        const score = Number(button.dataset.score);
+        if (!Number.isInteger(score) || score < 1 || score > 10) {
+            return;
+        }
+        applySelectedCozinessChip(card, score);
+        return;
+    }
+
+    if (action === "coziness-save") {
+        persistCozinessSelection(card);
+    }
+});
+
+results.addEventListener("keydown", (event) => {
+    const chip = event.target.closest(".cozy-chip");
+    if (!chip) {
+        return;
+    }
+    const card = chip.closest(".movie-card");
+    if (!card) {
+        return;
+    }
+    const score = Number(chip.dataset.score);
+    if (!Number.isInteger(score)) {
+        return;
+    }
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        moveCozinessSelection(card, score, 1);
+        return;
+    }
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        moveCozinessSelection(card, score, -1);
+        return;
+    }
+    if (event.key === "Home") {
+        event.preventDefault();
+        applySelectedCozinessChip(card, 1);
+        const firstChip = card.querySelector('.cozy-chip[data-score="1"]');
+        if (firstChip) {
+            firstChip.focus();
+        }
+        return;
+    }
+    if (event.key === "End") {
+        event.preventDefault();
+        applySelectedCozinessChip(card, 10);
+        const lastChip = card.querySelector('.cozy-chip[data-score="10"]');
+        if (lastChip) {
+            lastChip.focus();
+        }
     }
 });
 

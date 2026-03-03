@@ -1,6 +1,7 @@
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const STREAMING_CACHE_TTL_MS = 15 * 60 * 1000;
 const TRAILER_CACHE_TTL_MS = 10 * 60 * 1000;
+const TRAILER_FAILURE_CACHE_TTL_MS = 60 * 1000;
 const TIMEOUT_MS = 5000;
 const RETRIES = 1;
 
@@ -85,7 +86,7 @@ async function fetchJsonWithRetry(url, requestId) {
     throw lastError || new Error("Unknown upstream error");
 }
 
-async function fetchHeadWithRetry(url, requestId) {
+async function fetchWithMethodRetry(url, requestId, method = "GET") {
     let lastError = null;
 
     for (let attempt = 0; attempt <= RETRIES; attempt += 1) {
@@ -94,7 +95,7 @@ async function fetchHeadWithRetry(url, requestId) {
 
         try {
             const response = await fetch(url, {
-                method: "HEAD",
+                method,
                 signal: controller.signal,
                 headers: {
                     "x-request-id": requestId
@@ -126,7 +127,14 @@ function isPlayableMediaContentType(contentType) {
     }
 
     const normalized = String(contentType).toLowerCase();
-    return normalized.startsWith("video/") || normalized.includes("octet-stream");
+    return (
+        normalized.startsWith("video/") ||
+        normalized.includes("octet-stream") ||
+        normalized.includes("application/vnd.apple.mpegurl") ||
+        normalized.includes("application/x-mpegurl") ||
+        normalized.includes("application/dash+xml") ||
+        normalized.includes("mp2t")
+    );
 }
 
 function logTrailerDecision(requestId, details) {
@@ -350,27 +358,53 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
             source: payload.source,
             reason: payload.trailerDecisionReason
         });
-        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        writeCache(trailerCache, cacheKey, payload, TRAILER_FAILURE_CACHE_TTL_MS);
         return payload;
     }
 
     try {
         const mediaUrl = `https://imdb.iamidiotareyoutoo.com/media/${encodeURIComponent(imdbId)}`;
-        const response = await fetchHeadWithRetry(mediaUrl, requestId);
-        const contentType = String(response.headers.get("content-type") || "");
+        const headResponse = await fetchWithMethodRetry(mediaUrl, requestId, "HEAD");
+        const headContentType = String(headResponse.headers.get("content-type") || "");
 
-        if (isPlayableMediaContentType(contentType)) {
+        if (isPlayableMediaContentType(headContentType)) {
             const payload = {
                 url: mediaUrl,
                 source: "free-movie-db",
                 imdbId,
-                trailerDecisionReason: "playable_media_content_type"
+                trailerDecisionReason: "playable_media_content_type_head"
             };
             logTrailerDecision(requestId, {
                 imdbId,
                 source: payload.source,
                 reason: payload.trailerDecisionReason,
-                contentType
+                contentType: headContentType
+            });
+            writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+            return payload;
+        }
+
+        // HEAD can be unreliable on some CDNs. Retry with GET probe before falling back.
+        const getResponse = await fetchWithMethodRetry(mediaUrl, requestId, "GET");
+        const getContentType = String(getResponse.headers.get("content-type") || "");
+        const isPlayableGet = isPlayableMediaContentType(getContentType);
+        const isReachableGet = !!getResponse?.ok;
+
+        if (isPlayableGet || isReachableGet) {
+            const payload = {
+                url: mediaUrl,
+                source: "free-movie-db",
+                imdbId,
+                trailerDecisionReason: isPlayableGet
+                    ? "playable_media_content_type_get"
+                    : "reachable_media_endpoint_get_probe"
+            };
+            logTrailerDecision(requestId, {
+                imdbId,
+                source: payload.source,
+                reason: payload.trailerDecisionReason,
+                contentTypeHead: headContentType,
+                contentTypeGet: getContentType
             });
             writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
             return payload;
@@ -378,20 +412,21 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
 
         const payload = {
             ...fallbackBase,
-            trailerDecisionReason: "non_playable_media_content_type"
+            trailerDecisionReason: "non_playable_media_content_type_after_get_probe"
         };
         logTrailerDecision(requestId, {
             imdbId,
             source: payload.source,
             reason: payload.trailerDecisionReason,
-            contentType
+            contentTypeHead: headContentType,
+            contentTypeGet: getContentType
         });
-        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        writeCache(trailerCache, cacheKey, payload, TRAILER_FAILURE_CACHE_TTL_MS);
         return payload;
     } catch (error) {
         const payload = {
             ...fallbackBase,
-            trailerDecisionReason: "media_head_request_failed"
+            trailerDecisionReason: "media_probe_request_failed"
         };
         logTrailerDecision(requestId, {
             imdbId,
@@ -399,7 +434,7 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
             reason: payload.trailerDecisionReason,
             error: String(error?.message || error)
         });
-        writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
+        writeCache(trailerCache, cacheKey, payload, TRAILER_FAILURE_CACHE_TTL_MS);
         return payload;
     }
 }
