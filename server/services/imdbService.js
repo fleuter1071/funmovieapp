@@ -137,6 +137,21 @@ function isPlayableMediaContentType(contentType) {
     );
 }
 
+function isLikelyPlayableMediaUrl(url) {
+    if (!url) {
+        return false;
+    }
+    const normalized = String(url).toLowerCase();
+    return (
+        normalized.includes(".mp4") ||
+        normalized.includes(".m3u8") ||
+        normalized.includes(".mpd") ||
+        normalized.includes(".webm") ||
+        normalized.includes("/video/") ||
+        normalized.includes("/stream/")
+    );
+}
+
 function logTrailerDecision(requestId, details) {
     const log = {
         ts: new Date().toISOString(),
@@ -388,23 +403,24 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
         const getResponse = await fetchWithMethodRetry(mediaUrl, requestId, "GET");
         const getContentType = String(getResponse.headers.get("content-type") || "");
         const isPlayableGet = isPlayableMediaContentType(getContentType);
-        const isReachableGet = !!getResponse?.ok;
+        const isPlayableUrl = isLikelyPlayableMediaUrl(getResponse?.url);
 
-        if (isPlayableGet || isReachableGet) {
+        if (isPlayableGet || isPlayableUrl) {
             const payload = {
                 url: mediaUrl,
                 source: "free-movie-db",
                 imdbId,
                 trailerDecisionReason: isPlayableGet
                     ? "playable_media_content_type_get"
-                    : "reachable_media_endpoint_get_probe"
+                    : "playable_media_url_get_probe"
             };
             logTrailerDecision(requestId, {
                 imdbId,
                 source: payload.source,
                 reason: payload.trailerDecisionReason,
                 contentTypeHead: headContentType,
-                contentTypeGet: getContentType
+                contentTypeGet: getContentType,
+                finalUrl: String(getResponse?.url || "")
             });
             writeCache(trailerCache, cacheKey, payload, TRAILER_CACHE_TTL_MS);
             return payload;
