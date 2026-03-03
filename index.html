@@ -16,29 +16,55 @@
 </head>
 <body>
     <main class="app-shell">
-        <header class="hero">
-            <p class="eyebrow">Movie Finder</p>
-            <h1>Find a film and see where it is streaming</h1>
-            <p class="hero-copy">Search by title, scan rich cards quickly, then jump to trailers or streaming providers in one click.</p>
-        </header>
+        <section id="searchView" class="app-view" aria-label="Search view">
+            <header class="hero">
+                <p class="eyebrow">Movie Finder</p>
+                <h1>Find a film and see where it is streaming</h1>
+                <p class="hero-copy">Search by title, scan rich cards quickly, then jump to trailers or streaming providers in one click.</p>
+            </header>
 
-        <section class="search-panel" aria-label="Movie search">
-            <form id="searchForm" class="search-row">
-                <label class="sr-only" for="searchInput">Movie title</label>
-                <input type="text" id="searchInput" placeholder="Search for a movie (e.g., Friday the 13th)..." autocomplete="off">
-                <button id="searchButton" class="primary-btn" type="submit">Search</button>
-            </form>
-            <p class="search-hint">Try: Scream, Alien, The Thing, Hereditary</p>
+            <section class="search-panel" aria-label="Movie search">
+                <form id="searchForm" class="search-row">
+                    <label class="sr-only" for="searchInput">Movie title</label>
+                    <input type="text" id="searchInput" placeholder="Search for a movie (e.g., Friday the 13th)..." autocomplete="off">
+                    <button id="searchButton" class="primary-btn" type="submit">Search</button>
+                </form>
+                <p class="search-hint">Try: Scream, Alien, The Thing, Hereditary</p>
+            </section>
+
+            <section class="results-section" aria-label="Search results">
+                <div class="results-head">
+                    <h2>Results</h2>
+                    <p id="resultsMeta" class="results-meta">Search for a title to begin.</p>
+                </div>
+                <div id="results" class="results-grid" aria-live="polite"></div>
+            </section>
         </section>
 
-        <section class="results-section" aria-label="Search results">
-            <div class="results-head">
-                <h2>Results</h2>
-                <p id="resultsMeta" class="results-meta">Search for a title to begin.</p>
-            </div>
-            <div id="results" class="results-grid" aria-live="polite"></div>
+        <section id="leaderboardView" class="app-view leaderboard-view" aria-label="Coziness leaderboard view" hidden>
+            <header class="leaderboard-header">
+                <h2>Coziness Leaderboard</h2>
+                <p id="leaderboardMeta" class="results-meta">Ranking rated movies by coziness.</p>
+            </header>
+            <section class="leaderboard-controls" aria-label="Leaderboard controls">
+                <label class="sr-only" for="leaderboardGenre">Genre filter</label>
+                <select id="leaderboardGenre" class="leaderboard-select">
+                    <option value="all">Genre: All</option>
+                </select>
+                <label class="sr-only" for="leaderboardSort">Sort order</label>
+                <select id="leaderboardSort" class="leaderboard-select">
+                    <option value="desc">Sort: Most Cozy ↓</option>
+                    <option value="asc">Sort: Least Cozy ↑</option>
+                </select>
+            </section>
+            <div id="leaderboardResults" class="leaderboard-results" aria-live="polite"></div>
         </section>
     </main>
+
+    <nav class="bottom-nav" aria-label="Primary navigation">
+        <button type="button" class="bottom-nav-btn is-active" data-tab="discover" aria-selected="true">Discover</button>
+        <button type="button" class="bottom-nav-btn" data-tab="leaderboard" aria-selected="false">Leaderboard</button>
+    </nav>
 
     <script type="module" src="src/main.js"></script>
 </body>

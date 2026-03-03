@@ -48,6 +48,14 @@ export function renderMovies(container, movies) {
         card.className = "movie-card";
         card.dataset.imdbId = String(movie.imdbId || "").trim();
         card.dataset.title = String(movie.title || "").trim();
+        card.dataset.year = String(movie.year || "").trim();
+        card.dataset.posterUrl = String(movie.posterUrl || "").trim();
+        const genres = Array.isArray(movie.genres)
+            ? movie.genres
+            : movie.genre
+                ? [movie.genre]
+                : [];
+        card.dataset.genres = JSON.stringify(genres);
 
         const posterWrap = document.createElement("div");
         posterWrap.className = "poster-wrap";
@@ -205,6 +213,53 @@ export function renderMovies(container, movies) {
     });
 
     container.appendChild(fragment);
+}
+
+export function renderLeaderboard(container, payload = {}) {
+    container.innerHTML = "";
+
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!items.length) {
+        renderStatus(container, "No rated movies match this filter yet.", "empty");
+        return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "leaderboard-list";
+
+    items.forEach((item) => {
+        const row = document.createElement("article");
+        row.className = "leaderboard-row";
+
+        const rank = document.createElement("span");
+        rank.className = "leaderboard-rank";
+        rank.textContent = String(item.rank || "");
+
+        const poster = document.createElement("img");
+        poster.className = "leaderboard-poster";
+        poster.src = item.posterUrl || NO_POSTER_URL;
+        poster.alt = item.title ? `${item.title} Poster` : "Movie poster";
+        poster.loading = "lazy";
+        poster.decoding = "async";
+
+        const content = document.createElement("div");
+        content.className = "leaderboard-content";
+
+        const title = document.createElement("h3");
+        title.className = "leaderboard-title";
+        const year = item.year ? ` (${item.year})` : "";
+        title.textContent = `${item.title || item.imdbId || "Untitled"}${year}`;
+
+        const score = document.createElement("span");
+        score.className = "leaderboard-score";
+        score.textContent = `Cozy ${item.score}/10`;
+
+        content.append(title, score);
+        row.append(rank, poster, content);
+        list.appendChild(row);
+    });
+
+    container.appendChild(list);
 }
 
 export function updateCardCoziness(card, score) {

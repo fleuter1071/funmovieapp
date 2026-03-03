@@ -1,5 +1,6 @@
-import { getCozinessRatingsBatch, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
+import { getCozinessRatingsBatch, getLeaderboard, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
 import {
+    renderLeaderboard,
     renderLoadingSkeletons,
     renderMovies,
     renderStatus,
@@ -13,7 +14,19 @@ const searchInput = document.getElementById("searchInput");
 const searchButton = document.getElementById("searchButton");
 const results = document.getElementById("results");
 const resultsMeta = document.getElementById("resultsMeta");
+const tabButtons = [...document.querySelectorAll("[data-tab]")];
+const searchView = document.getElementById("searchView");
+const leaderboardView = document.getElementById("leaderboardView");
+const leaderboardResults = document.getElementById("leaderboardResults");
+const leaderboardMeta = document.getElementById("leaderboardMeta");
+const leaderboardGenre = document.getElementById("leaderboardGenre");
+const leaderboardSort = document.getElementById("leaderboardSort");
 const cozyAutoCloseTimers = new WeakMap();
+
+const leaderboardState = {
+    genre: "all",
+    sortOrder: "desc"
+};
 
 function trackEvent(name, params = {}) {
     if (typeof window.gtag !== "function") {
@@ -32,6 +45,111 @@ function setSearchPending(isPending) {
     searchButton.disabled = isPending;
     searchButton.textContent = isPending ? "Searching..." : "Search";
     results.setAttribute("aria-busy", isPending ? "true" : "false");
+}
+
+function setLeaderboardPending(isPending) {
+    if (leaderboardSort) {
+        leaderboardSort.disabled = isPending;
+    }
+    if (leaderboardGenre) {
+        leaderboardGenre.disabled = isPending;
+    }
+}
+
+function setLeaderboardMeta(message) {
+    if (leaderboardMeta) {
+        leaderboardMeta.textContent = message;
+    }
+}
+
+function setActiveView(view) {
+    const next = view === "leaderboard" ? "leaderboard" : "discover";
+
+    if (searchView) {
+        searchView.hidden = next !== "discover";
+    }
+    if (leaderboardView) {
+        leaderboardView.hidden = next !== "leaderboard";
+    }
+
+    tabButtons.forEach((tab) => {
+        const isActive = tab.dataset.tab === next;
+        tab.classList.toggle("is-active", isActive);
+        tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    if (next === "leaderboard") {
+        loadLeaderboard();
+    }
+}
+
+function parseCardGenres(card) {
+    try {
+        const parsed = JSON.parse(card.dataset.genres || "[]");
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function getCardMovieMetadata(card) {
+    const yearValue = Number(card.dataset.year);
+    return {
+        imdbId: String(card.dataset.imdbId || "").trim(),
+        title: String(card.dataset.title || "").trim(),
+        year: Number.isInteger(yearValue) && yearValue > 1800 ? yearValue : null,
+        posterUrl: String(card.dataset.posterUrl || "").trim(),
+        genres: parseCardGenres(card)
+    };
+}
+
+function applyGenreOptions(availableGenres = []) {
+    if (!leaderboardGenre) {
+        return;
+    }
+
+    const previous = leaderboardState.genre || "all";
+    leaderboardGenre.innerHTML = "";
+
+    const allOption = document.createElement("option");
+    allOption.value = "all";
+    allOption.textContent = "Genre: All";
+    leaderboardGenre.appendChild(allOption);
+
+    availableGenres.forEach((genre) => {
+        const option = document.createElement("option");
+        option.value = genre;
+        option.textContent = `Genre: ${genre}`;
+        leaderboardGenre.appendChild(option);
+    });
+
+    const nextValue = [...leaderboardGenre.options].some((opt) => opt.value === previous) ? previous : "all";
+    leaderboardState.genre = nextValue;
+    leaderboardGenre.value = nextValue;
+}
+
+async function loadLeaderboard() {
+    if (!leaderboardResults) {
+        return;
+    }
+
+    setLeaderboardPending(true);
+    setLeaderboardMeta("Loading leaderboard...");
+    renderLoadingSkeletons(leaderboardResults, 5);
+
+    try {
+        const payload = await getLeaderboard(leaderboardState.genre, leaderboardState.sortOrder);
+        const data = payload?.data || { items: [], availableGenres: [] };
+        applyGenreOptions(Array.isArray(data.availableGenres) ? data.availableGenres : []);
+        const items = Array.isArray(data.items) ? data.items : [];
+        renderLeaderboard(leaderboardResults, { items });
+        setLeaderboardMeta(`${items.length} ranked movie${items.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+        renderStatus(leaderboardResults, "Leaderboard is unavailable right now.", "error");
+        setLeaderboardMeta("Could not load leaderboard.");
+    } finally {
+        setLeaderboardPending(false);
+    }
 }
 
 function closeCozinessPanel(card) {
@@ -175,7 +293,7 @@ function persistCozinessSelection(card) {
         saveBtn.disabled = true;
     }
 
-    saveCozinessRating(imdbId, score)
+    saveCozinessRating(imdbId, score, getCardMovieMetadata(card))
         .then((payload) => {
             const savedScore = Number(payload?.data?.score);
             const nextScore = Number.isInteger(savedScore) && savedScore >= 1 && savedScore <= 10 ? savedScore : score;
@@ -421,6 +539,27 @@ searchForm.addEventListener("submit", (event) => {
     handleSearch();
 });
 
+if (leaderboardSort) {
+    leaderboardSort.addEventListener("change", () => {
+        leaderboardState.sortOrder = leaderboardSort.value === "asc" ? "asc" : "desc";
+        loadLeaderboard();
+    });
+}
+
+if (leaderboardGenre) {
+    leaderboardGenre.addEventListener("change", () => {
+        leaderboardState.genre = String(leaderboardGenre.value || "all");
+        loadLeaderboard();
+    });
+}
+
+tabButtons.forEach((tab) => {
+    tab.addEventListener("click", () => {
+        const view = tab.dataset.tab === "leaderboard" ? "leaderboard" : "discover";
+        setActiveView(view);
+    });
+});
+
 results.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
 
@@ -482,6 +621,8 @@ results.addEventListener("click", (event) => {
         persistCozinessSelection(card);
     }
 });
+
+setActiveView("discover");
 
 results.addEventListener("keydown", (event) => {
     const chip = event.target.closest(".cozy-chip");

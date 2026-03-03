@@ -45,6 +45,22 @@ function createMockServices() {
         },
         async upsertCozinessRating(imdbId, score) {
             return { imdbId, score, updatedAt: "2026-03-02T00:00:00.000Z" };
+        },
+        async getLeaderboard({ genre, sortOrder }) {
+            return {
+                items: [
+                    {
+                        rank: 1,
+                        imdbId: "tt0117571",
+                        title: "Scream",
+                        year: 1996,
+                        posterUrl: "",
+                        genre: genre === "all" ? "Horror" : genre,
+                        score: sortOrder === "asc" ? 2 : 9
+                    }
+                ],
+                availableGenres: ["Horror", "Comedy"]
+            };
         }
     };
 }
@@ -207,6 +223,26 @@ test("POST /api/v1/coziness upserts valid payload", async () => {
         const payload = await response.json();
         assert.equal(payload.data.imdbId, "tt0117571");
         assert.equal(payload.data.score, 9);
+    });
+});
+
+test("GET /api/v1/leaderboard returns ranked list payload", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/leaderboard?genre=all&sortOrder=desc`);
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.data.items[0].imdbId, "tt0117571");
+        assert.equal(payload.data.items[0].rank, 1);
+        assert.deepEqual(payload.data.availableGenres, ["Horror", "Comedy"]);
+    });
+});
+
+test("GET /api/v1/leaderboard validates sort order", async () => {
+    await withServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/v1/leaderboard?genre=all&sortOrder=sideways`);
+        assert.equal(response.status, 400);
+        const payload = await response.json();
+        assert.equal(payload.error.code, "INVALID_SORT_ORDER");
     });
 });
 

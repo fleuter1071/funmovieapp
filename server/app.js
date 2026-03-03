@@ -3,7 +3,7 @@ const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
 const { searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
-const { getCozinessRating, getCozinessRatingsBatch, upsertCozinessRating } = require("./services/cozinessStore");
+const { getCozinessRating, getCozinessRatingsBatch, upsertCozinessRating, upsertMovieMetadata, getLeaderboard } = require("./services/cozinessStore");
 
 function loadEnvFromFile(filePath) {
     if (!fs.existsSync(filePath)) {
@@ -69,6 +69,37 @@ function isValidTextQuery(value) {
 
 function isValidCozinessScore(value) {
     return Number.isInteger(value) && value >= 1 && value <= 10;
+}
+
+function sanitizeMovieMetadata(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return null;
+    }
+
+    const imdbId = String(value.imdbId || "").trim();
+    if (!isValidImdbId(imdbId)) {
+        return null;
+    }
+
+    const title = String(value.title || "").trim().slice(0, 240);
+    const yearRaw = Number(value.year);
+    const year = Number.isInteger(yearRaw) ? yearRaw : null;
+    const posterUrl = String(value.posterUrl || "").trim().slice(0, 1024);
+    const genres = Array.isArray(value.genres)
+        ? value.genres.map((genre) => String(genre || "").trim()).filter(Boolean).slice(0, 8)
+        : [];
+    const singleGenre = String(value.genre || "").trim();
+    if (singleGenre && !genres.length) {
+        genres.push(singleGenre);
+    }
+
+    return {
+        imdbId,
+        title: title || null,
+        year,
+        posterUrl: posterUrl || null,
+        genres
+    };
 }
 
 function createRequestIdMiddleware() {
@@ -165,7 +196,9 @@ function createApp(
         resolveTrailerUrl,
         getCozinessRating,
         getCozinessRatingsBatch,
-        upsertCozinessRating
+        upsertCozinessRating,
+        upsertMovieMetadata,
+        getLeaderboard
     }
 ) {
     const app = express();
@@ -329,6 +362,7 @@ function createApp(
     app.post("/api/v1/coziness", async (req, res) => {
         const imdbId = String(req.body?.imdbId || "").trim();
         const score = Number(req.body?.score);
+        const movie = sanitizeMovieMetadata(req.body?.movie);
 
         if (!isValidImdbId(imdbId)) {
             sendError(res, req.requestId, 400, "INVALID_IMDB_ID", "imdbId must look like tt1234567.", false);
@@ -341,6 +375,9 @@ function createApp(
         }
 
         try {
+            if (movie && typeof services.upsertMovieMetadata === "function") {
+                await services.upsertMovieMetadata(movie, { requestId: req.requestId });
+            }
             const data = await services.upsertCozinessRating(imdbId, score, { requestId: req.requestId });
             res.json({ data, requestId: req.requestId });
         } catch (error) {
@@ -350,6 +387,29 @@ function createApp(
             }
             logUpstreamError(req, "/api/v1/coziness", error);
             sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to save coziness rating.", true);
+        }
+    });
+
+    app.get("/api/v1/leaderboard", async (req, res) => {
+        const genre = String(req.query.genre || "all").trim() || "all";
+        const sortOrderRaw = String(req.query.sortOrder || "desc").trim().toLowerCase();
+        const sortOrder = sortOrderRaw === "asc" ? "asc" : sortOrderRaw === "desc" ? "desc" : "";
+
+        if (!sortOrder) {
+            sendError(res, req.requestId, 400, "INVALID_SORT_ORDER", "sortOrder must be 'asc' or 'desc'.", false);
+            return;
+        }
+
+        try {
+            const data = await services.getLeaderboard({ genre, sortOrder }, { requestId: req.requestId });
+            res.json({ data, requestId: req.requestId });
+        } catch (error) {
+            if (error?.code === "COZINESS_NOT_CONFIGURED") {
+                sendError(res, req.requestId, 503, "COZINESS_UNAVAILABLE", "Coziness service is not configured.", false);
+                return;
+            }
+            logUpstreamError(req, "/api/v1/leaderboard", error);
+            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch leaderboard.", true);
         }
     });
 

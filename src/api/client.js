@@ -45,12 +45,20 @@ export async function getCozinessRatingsBatch(imdbIds) {
     });
 }
 
-export async function saveCozinessRating(imdbId, score) {
+export async function saveCozinessRating(imdbId, score, movie = null) {
     return fetchJson("/coziness", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({ imdbId, score })
+        body: JSON.stringify({ imdbId, score, movie })
     });
+}
+
+export async function getLeaderboard(genre = "all", sortOrder = "desc") {
+    const params = new URLSearchParams({
+        genre,
+        sortOrder
+    });
+    return fetchJson(`/leaderboard?${params.toString()}`);
 }
