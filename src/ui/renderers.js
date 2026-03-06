@@ -73,6 +73,32 @@ export function renderMovies(container, movies) {
         year.textContent = movie.year || "Year not available";
         const imdbId = String(movie.imdbId || "").trim();
 
+        const metadataRow = document.createElement("div");
+        metadataRow.className = "metadata-row";
+        let hasMetadataScore = false;
+
+        const imdbRating = String(movie.imdbRating || "").trim();
+        if (imdbRating && imdbRating.toUpperCase() !== "N/A") {
+            const imdbScore = document.createElement("span");
+            imdbScore.className = "metadata-score metadata-score-imdb";
+            imdbScore.textContent = `IMDb ${imdbRating}`;
+            imdbScore.setAttribute("aria-label", `IMDb rating ${imdbRating} out of 10`);
+            imdbScore.title = `IMDb rating: ${imdbRating}/10`;
+            metadataRow.appendChild(imdbScore);
+            hasMetadataScore = true;
+        }
+
+        const rottenRating = String(movie.rottenTomatoesRating || "").trim();
+        if (rottenRating && rottenRating.toUpperCase() !== "N/A") {
+            const rottenScore = document.createElement("span");
+            rottenScore.className = "metadata-score metadata-score-rotten";
+            rottenScore.textContent = `🍅 ${rottenRating}`;
+            rottenScore.setAttribute("aria-label", `Rotten Tomatoes score ${rottenRating}`);
+            rottenScore.title = `Rotten Tomatoes: ${rottenRating}`;
+            metadataRow.appendChild(rottenScore);
+            hasMetadataScore = true;
+        }
+
         const streamingSummary = document.createElement("p");
         streamingSummary.className = "movie-streaming-summary";
         streamingSummary.textContent = "";
@@ -205,9 +231,26 @@ export function renderMovies(container, movies) {
         posterWrap.appendChild(img);
         actions.append(trailerBtn, streamBtn, cozyToggleBtn, imdbControl);
         if (imdbId) {
-            card.append(posterWrap, title, year, streamingSummary, actions, cozinessBox, dataBox);
+            card.append(
+                posterWrap,
+                title,
+                year,
+                ...(hasMetadataScore ? [metadataRow] : []),
+                actions,
+                streamingSummary,
+                cozinessBox,
+                dataBox
+            );
         } else {
-            card.append(posterWrap, title, year, streamingSummary, actions, dataBox);
+            card.append(
+                posterWrap,
+                title,
+                year,
+                ...(hasMetadataScore ? [metadataRow] : []),
+                actions,
+                streamingSummary,
+                dataBox
+            );
         }
         fragment.appendChild(card);
     });

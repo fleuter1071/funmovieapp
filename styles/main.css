@@ -220,13 +220,38 @@ h2 {
 }
 
 .movie-year {
-    margin: var(--space-2) 0 var(--space-4);
+    margin: var(--space-2) 0 var(--space-2);
     color: var(--text-muted);
     font-size: 0.9rem;
 }
 
+.metadata-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 var(--space-3);
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid #233142;
+}
+
+.metadata-score {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+}
+
+.metadata-score-imdb {
+    color: #e6bc3a;
+}
+
+.metadata-score-rotten {
+    color: #e66a6a;
+}
+
 .movie-streaming-summary {
-    margin: calc(var(--space-2) * -1) 0 var(--space-3);
+    margin: var(--space-3) 0 0;
     color: var(--text-secondary);
     font-size: 0.8rem;
     min-height: 0;
@@ -238,8 +263,12 @@ h2 {
 
 .actions {
     display: grid;
-    gap: 0.52rem;
+    gap: 0.62rem;
     margin-top: auto;
+}
+
+.actions .btn-primary {
+    margin-bottom: 0.08rem;
 }
 
 .action-btn {
@@ -326,10 +355,12 @@ h2 {
 }
 
 .imdb-btn img {
-    height: 14px;
+    height: 16px;
     width: auto;
     display: block;
     flex-shrink: 0;
+    opacity: 0.96;
+    filter: saturate(1.02) contrast(1.05);
 }
 
 .imdb-btn:disabled {
@@ -870,6 +901,25 @@ h2 {
         align-items: flex-start;
     }
 
+}
+
+@media (min-width: 900px) {
+    .movie-title {
+        font-size: 1.14rem;
+        line-height: 1.32;
+    }
+
+    .movie-year {
+        font-size: 0.95rem;
+    }
+
+    .metadata-score {
+        font-size: 0.84rem;
+    }
+
+    .action-btn {
+        font-size: 0.99rem;
+    }
 }
 
 @media (max-width: 640px) {

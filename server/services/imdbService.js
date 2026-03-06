@@ -2,12 +2,14 @@ const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const STREAMING_CACHE_TTL_MS = 15 * 60 * 1000;
 const TRAILER_CACHE_TTL_MS = 10 * 60 * 1000;
 const TRAILER_FAILURE_CACHE_TTL_MS = 60 * 1000;
+const OMDB_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const TIMEOUT_MS = 5000;
 const RETRIES = 1;
 
 const searchCache = new Map();
 const streamingCache = new Map();
 const trailerCache = new Map();
+const omdbCache = new Map();
 
 const PROVIDER_BRAND_DOMAIN_MAP = {
     "Amazon Video": "amazon.com",
@@ -168,6 +170,95 @@ function buildYoutubeFallbackUrl(title) {
     return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
+function getOmdbApiKey() {
+    return String(process.env.OMDB_API_KEY || "").trim();
+}
+
+function normalizeImdbRating(value) {
+    const normalized = String(value || "").trim();
+    if (!normalized || normalized.toUpperCase() === "N/A") {
+        return null;
+    }
+    return normalized;
+}
+
+function normalizeRottenTomatoesRating(ratings) {
+    const list = Array.isArray(ratings) ? ratings : [];
+    const match = list.find((entry) => String(entry?.Source || "").toLowerCase() === "rotten tomatoes");
+    const value = String(match?.Value || "").trim();
+    if (!value || value.toUpperCase() === "N/A") {
+        return null;
+    }
+    return value;
+}
+
+async function getOmdbCriticScores(imdbId, requestId) {
+    const normalizedImdbId = String(imdbId || "").trim();
+    if (!normalizedImdbId) {
+        return null;
+    }
+
+    const cacheKey = normalizedImdbId.toLowerCase();
+    const cached = readCache(omdbCache, cacheKey);
+    if (cached) {
+        return cached;
+    }
+
+    const apiKey = getOmdbApiKey();
+    if (!apiKey) {
+        return null;
+    }
+
+    const url = `https://www.omdbapi.com/?i=${encodeURIComponent(normalizedImdbId)}&apikey=${encodeURIComponent(apiKey)}`;
+
+    try {
+        const payload = await fetchJsonWithRetry(url, requestId);
+        if (String(payload?.Response || "").toLowerCase() === "false") {
+            return null;
+        }
+
+        const scores = {
+            imdbRating: normalizeImdbRating(payload?.imdbRating),
+            rottenTomatoesRating: normalizeRottenTomatoesRating(payload?.Ratings)
+        };
+
+        if (!scores.imdbRating && !scores.rottenTomatoesRating) {
+            return null;
+        }
+
+        writeCache(omdbCache, cacheKey, scores, OMDB_CACHE_TTL_MS);
+        return scores;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function enrichSearchResultsWithCriticScores(movies, requestId) {
+    if (!Array.isArray(movies) || !movies.length || !getOmdbApiKey()) {
+        return movies;
+    }
+
+    const enriched = await Promise.all(movies.map(async (movie) => {
+        const imdbId = String(movie?.imdbId || "").trim();
+        if (!imdbId) {
+            return movie;
+        }
+
+        const scores = await getOmdbCriticScores(imdbId, requestId);
+        if (!scores) {
+            return movie;
+        }
+
+        return {
+            ...movie,
+            ...(scores.imdbRating ? { imdbRating: scores.imdbRating } : {}),
+            ...(scores.rottenTomatoesRating ? { rottenTomatoesRating: scores.rottenTomatoesRating } : {})
+        };
+    }));
+
+    return enriched;
+}
+
 function normalizeSearch(data) {
     const rows = Array.isArray(data?.description) ? data.description : [];
 
@@ -312,9 +403,10 @@ async function searchMovies(query, ctx = {}) {
     const url = `https://imdb.iamidiotareyoutoo.com/search?q=${encodeURIComponent(query)}`;
     const upstream = await fetchJsonWithRetry(url, requestId);
     const normalized = normalizeSearch(upstream);
+    const enriched = await enrichSearchResultsWithCriticScores(normalized, requestId);
 
-    writeCache(searchCache, cacheKey, normalized, SEARCH_CACHE_TTL_MS);
-    return normalized;
+    writeCache(searchCache, cacheKey, enriched, SEARCH_CACHE_TTL_MS);
+    return enriched;
 }
 
 async function getStreamingProviders({ imdbId, title }, ctx = {}) {
