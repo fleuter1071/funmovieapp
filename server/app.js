@@ -1,4 +1,4 @@
-const fs = require("node:fs");
+﻿const fs = require("node:fs");
 const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
@@ -254,9 +254,11 @@ function createApp(
     app.get("/api/v1/streaming", async (req, res) => {
         const imdbId = String(req.query.imdbId || "").trim();
         const title = String(req.query.title || "").trim();
+        const year = String(req.query.year || "").trim();
 
         const hasValidImdbId = imdbId.length === 0 || isValidImdbId(imdbId);
         const hasValidTitle = title.length === 0 || isValidTextQuery(title);
+        const hasValidYear = year.length === 0 || /^\d{4}$/.test(year);
 
         if (!imdbId && !title) {
             sendError(res, req.requestId, 400, "INVALID_QUERY", "Provide imdbId or title.", false);
@@ -273,8 +275,13 @@ function createApp(
             return;
         }
 
+        if (!hasValidYear) {
+            sendError(res, req.requestId, 400, "INVALID_YEAR", "year must be a 4-digit year when provided.", false);
+            return;
+        }
+
         try {
-            const data = await services.getStreamingProviders({ imdbId, title }, { requestId: req.requestId });
+            const data = await services.getStreamingProviders({ imdbId, title, year }, { requestId: req.requestId });
             res.json({ data, requestId: req.requestId });
         } catch (error) {
             logUpstreamError(req, "/api/v1/streaming", error);
@@ -439,3 +446,4 @@ module.exports = {
     isValidImdbId,
     isValidTextQuery
 };
+

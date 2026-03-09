@@ -32,12 +32,23 @@
                 <p class="search-hint">Try: Scream, Alien, The Thing, Hereditary</p>
             </section>
 
+            <section class="discover-services" aria-label="Streaming service preferences">
+                <button id="myServicesButton" class="services-trigger" type="button" aria-haspopup="dialog" aria-controls="servicesSheet">
+                    My Services
+                </button>
+                <label id="includedOnlyWrap" class="included-filter" hidden>
+                    <input id="includedOnlyInput" type="checkbox">
+                    <span>Included only</span>
+                </label>
+            </section>
+
             <section class="results-section" aria-label="Search results">
-                <div class="results-head">
+                <div id="resultsHead" class="results-head" hidden>
                     <h2>Results</h2>
-                    <p id="resultsMeta" class="results-meta">Search for a title to begin.</p>
+                    <p id="resultsMeta" class="results-meta"></p>
                 </div>
                 <div id="results" class="results-grid" aria-live="polite"></div>
+                <div id="discoverFilterState" class="discover-filter-state" hidden></div>
             </section>
         </section>
 
@@ -65,6 +76,23 @@
         <button type="button" class="bottom-nav-btn is-active" data-tab="discover" aria-selected="true">Discover</button>
         <button type="button" class="bottom-nav-btn" data-tab="leaderboard" aria-selected="false">Leaderboard</button>
     </nav>
+
+    <div id="servicesSheetBackdrop" class="services-sheet-backdrop" hidden></div>
+    <section id="servicesSheet" class="services-sheet" role="dialog" aria-modal="true" aria-labelledby="servicesSheetTitle" hidden>
+        <div class="services-sheet-handle" aria-hidden="true"></div>
+        <div class="services-sheet-head">
+            <div>
+                <h2 id="servicesSheetTitle" class="services-sheet-title">My Streaming Services</h2>
+                <p class="services-sheet-copy">Pick the services you already pay for so Discover can highlight movies you can watch right now.</p>
+            </div>
+            <button id="servicesSheetClose" class="services-sheet-close" type="button" aria-label="Close My Services">X</button>
+        </div>
+        <div id="servicesOptions" class="services-options" role="group" aria-label="Streaming services"></div>
+        <div class="services-sheet-actions">
+            <button id="servicesClearButton" class="services-clear-btn" type="button">Clear</button>
+            <button id="servicesDoneButton" class="services-done-btn" type="button">Done</button>
+        </div>
+    </section>
 
     <script type="module" src="src/main.js"></script>
 </body>

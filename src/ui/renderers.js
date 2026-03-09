@@ -1,4 +1,5 @@
 import { NO_POSTER_URL } from "../config.js";
+import { isIncludedAvailabilityType, normalizeServiceKey } from "../features/myServices.mjs";
 
 const IMDB_LOGO_SRC = "/src/assets/IMDBlogos/IMDb_PrimaryLogo_Black.svg";
 
@@ -98,6 +99,10 @@ export function renderMovies(container, movies) {
             metadataRow.appendChild(rottenScore);
             hasMetadataScore = true;
         }
+
+        const serviceBadge = document.createElement("div");
+        serviceBadge.className = "movie-service-badge";
+        serviceBadge.hidden = true;
 
         const streamingSummary = document.createElement("p");
         streamingSummary.className = "movie-streaming-summary";
@@ -236,6 +241,7 @@ export function renderMovies(container, movies) {
                 title,
                 year,
                 ...(hasMetadataScore ? [metadataRow] : []),
+                serviceBadge,
                 actions,
                 streamingSummary,
                 cozinessBox,
@@ -247,6 +253,7 @@ export function renderMovies(container, movies) {
                 title,
                 year,
                 ...(hasMetadataScore ? [metadataRow] : []),
+                serviceBadge,
                 actions,
                 streamingSummary,
                 dataBox
@@ -336,12 +343,22 @@ export function updateCardCoziness(card, score) {
     }
 }
 
+export function updateMovieServiceBadge(card, text = "") {
+    const badge = card.querySelector(".movie-service-badge");
+    if (!badge) {
+        return;
+    }
+    const nextText = String(text || "").trim();
+    badge.textContent = nextText;
+    badge.hidden = !nextText;
+}
+
 export function renderStreamingStatus(dataBox, message) {
     dataBox.classList.add("visible");
     dataBox.textContent = message;
 }
 
-export function renderStreamingProviders(dataBox, providers) {
+export function renderStreamingProviders(dataBox, providers, options = {}) {
     dataBox.classList.add("visible");
     dataBox.innerHTML = "";
 
@@ -352,22 +369,34 @@ export function renderStreamingProviders(dataBox, providers) {
         return;
     }
 
+    const selectedServiceKeys = new Set(Array.isArray(options.selectedServiceKeys) ? options.selectedServiceKeys : []);
+
     const normalizedProviders = providers.map((rawProvider) => {
         if (typeof rawProvider === "string") {
+            const serviceKey = normalizeServiceKey(rawProvider);
             return {
                 name: rawProvider,
                 logoUrl: "",
                 movieUrl: "",
                 availabilityType: "stream",
-                isClickable: false
+                isClickable: false,
+                serviceKey,
+                isIncludedMatch: selectedServiceKeys.has(serviceKey)
             };
         }
-        return rawProvider;
+
+        const serviceKey = normalizeServiceKey(rawProvider?.name);
+        return {
+            ...rawProvider,
+            serviceKey,
+            isIncludedMatch: isIncludedAvailabilityType(rawProvider?.availabilityType) && selectedServiceKeys.has(serviceKey)
+        };
     });
 
-    const bucketOrder = ["included", "rent", "buy", "other"];
+    const bucketOrder = ["match", "included", "rent", "buy", "other"];
     const buckets = new Map(bucketOrder.map((key) => [key, []]));
     const classifyProvider = (provider) => {
+        if (provider.isIncludedMatch) return "match";
         const type = String(provider.availabilityType || "").toLowerCase();
         if (type === "stream" || type === "free" || type === "subscription") return "included";
         if (type === "rent") return "rent";
@@ -390,6 +419,7 @@ export function renderStreamingProviders(dataBox, providers) {
         featuredNames.add(key);
     };
 
+    pushFeatured(buckets.get("match")[0]);
     pushFeatured(buckets.get("included")[0]);
     pushFeatured(buckets.get("rent")[0]);
     pushFeatured(buckets.get("buy")[0]);
@@ -410,9 +440,13 @@ export function renderStreamingProviders(dataBox, providers) {
 
     const hint = document.createElement("p");
     hint.className = "streaming-hint";
-    hint.textContent = remainingProviders.length
-        ? "Best options first. Tap More options for all platforms."
-        : "Best options first. Tap a platform to open this movie (new tab).";
+    if (buckets.get("match").length) {
+        hint.textContent = "Your services first. Tap a platform to open this movie in a new tab.";
+    } else if (remainingProviders.length) {
+        hint.textContent = "Best options first. Tap More options for all platforms.";
+    } else {
+        hint.textContent = "Best options first. Tap a platform to open this movie in a new tab.";
+    }
 
     const featuredGrid = document.createElement("div");
     featuredGrid.className = "provider-grid provider-grid-featured";
@@ -420,7 +454,7 @@ export function renderStreamingProviders(dataBox, providers) {
     const renderProvider = (provider, container, isFeatured = false) => {
         const isLink = Boolean(provider.isClickable && provider.movieUrl);
         const item = document.createElement(isLink ? "a" : "div");
-        item.className = `provider-item${isFeatured ? " provider-item-featured" : ""}${isLink ? "" : " is-disabled"}`;
+        item.className = `provider-item${isFeatured ? " provider-item-featured" : ""}${isLink ? "" : " is-disabled"}${provider.isIncludedMatch ? " is-match" : ""}`;
 
         if (isLink) {
             item.href = provider.movieUrl;
@@ -455,6 +489,14 @@ export function renderStreamingProviders(dataBox, providers) {
         type.textContent = provider.availabilityType || "stream";
 
         item.append(name, type);
+
+        if (provider.isIncludedMatch) {
+            const match = document.createElement("span");
+            match.className = "provider-match-badge";
+            match.textContent = "Your service";
+            item.appendChild(match);
+        }
+
         container.appendChild(item);
     };
 

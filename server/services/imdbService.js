@@ -342,19 +342,79 @@ function normalizeOffer(offer) {
     };
 }
 
-function pickBestDescription(rows, imdbId) {
+function normalizeTitleForMatch(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+function getRowImdbId(row) {
+    return String(row?.imdbId || row?.["#IMDB_ID"] || "").trim().toLowerCase();
+}
+
+function getRowTitle(row) {
+    return String(row?.title || row?.["#TITLE"] || row?.["#TEXT"] || row?.name || "").trim();
+}
+
+function getRowYear(row) {
+    const candidates = [row?.year, row?.["#YEAR"], row?.releaseYear, row?.release_year];
+    for (const candidate of candidates) {
+        const raw = String(candidate || "").trim();
+        const match = raw.match(/\b(\d{4})\b/);
+        if (match) {
+            return match[1];
+        }
+    }
+    return "";
+}
+
+function buildStreamingCacheKey({ imdbId, title, year }) {
+    return [String(imdbId || "").trim().toLowerCase(), String(title || "").trim().toLowerCase(), String(year || "").trim()]
+        .filter(Boolean)
+        .join("|");
+}
+
+function buildStreamingQuery({ imdbId, title, year }) {
+    const normalizedTitle = String(title || "").trim();
+    const normalizedYear = String(year || "").trim();
+    if (normalizedTitle && normalizedYear) {
+        return `${normalizedTitle} ${normalizedYear}`;
+    }
+    return normalizedTitle || String(imdbId || "").trim();
+}
+function pickBestDescription(rows, imdbId, title = "", year = "") {
     if (!rows.length) {
         return null;
     }
 
-    if (imdbId) {
-        const exact = rows.find((row) => String(row?.imdbId || "").toLowerCase() === String(imdbId).toLowerCase());
+    const normalizedImdbId = String(imdbId || "").trim().toLowerCase();
+    if (normalizedImdbId) {
+        const exact = rows.find((row) => getRowImdbId(row) === normalizedImdbId);
         if (exact) {
             return exact;
         }
     }
 
-    return rows[0];
+    const normalizedTitle = normalizeTitleForMatch(title);
+    let candidates = rows;
+    if (normalizedTitle) {
+        const titleMatches = rows.filter((row) => normalizeTitleForMatch(getRowTitle(row)) === normalizedTitle);
+        if (titleMatches.length) {
+            candidates = titleMatches;
+        }
+    }
+
+    const normalizedYear = String(year || "").trim();
+    if (normalizedYear) {
+        const yearMatch = candidates.find((row) => getRowYear(row) === normalizedYear);
+        if (yearMatch) {
+            return yearMatch;
+        }
+    }
+
+    return candidates[0] || rows[0];
 }
 
 function dedupeProviders(offers) {
@@ -409,21 +469,21 @@ async function searchMovies(query, ctx = {}) {
     return enriched;
 }
 
-async function getStreamingProviders({ imdbId, title }, ctx = {}) {
+async function getStreamingProviders({ imdbId, title, year }, ctx = {}) {
     const requestId = ctx.requestId || "unknown";
-    const normalizedTitle = title || imdbId;
-    const cacheKey = normalizedTitle.toLowerCase();
+    const searchQuery = buildStreamingQuery({ imdbId, title, year });
+    const cacheKey = buildStreamingCacheKey({ imdbId, title, year }) || searchQuery.toLowerCase();
     const cached = readCache(streamingCache, cacheKey);
 
     if (cached) {
         return cached;
     }
 
-    const url = `https://imdb.iamidiotareyoutoo.com/justwatch?q=${encodeURIComponent(normalizedTitle)}&L=en_US`;
+    const url = `https://imdb.iamidiotareyoutoo.com/justwatch?q=${encodeURIComponent(searchQuery)}&L=en_US`;
     const upstream = await fetchJsonWithRetry(url, requestId);
 
     const descriptions = Array.isArray(upstream?.description) ? upstream.description : [];
-    const selected = pickBestDescription(descriptions, imdbId);
+    const selected = pickBestDescription(descriptions, imdbId, title, year);
     const rawOffers = Array.isArray(selected?.offers) ? selected.offers : [];
     const providers = dedupeProviders(rawOffers.map(normalizeOffer).filter(Boolean));
 
@@ -550,5 +610,8 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
 module.exports = {
     searchMovies,
     getStreamingProviders,
-    resolveTrailerUrl
+    resolveTrailerUrl,
+    buildStreamingCacheKey,
+    buildStreamingQuery,
+    pickBestDescription
 };

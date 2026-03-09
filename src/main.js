@@ -1,4 +1,6 @@
 import { getCozinessRatingsBatch, getLeaderboard, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
+import { createDiscoverServicesController } from "./features/discoverServices.mjs";
+import { getMatchingServiceLabels } from "./features/myServices.mjs";
 import {
     renderLeaderboard,
     renderLoadingSkeletons,
@@ -13,7 +15,9 @@ const searchForm = document.getElementById("searchForm");
 const searchInput = document.getElementById("searchInput");
 const searchButton = document.getElementById("searchButton");
 const results = document.getElementById("results");
+const resultsHead = document.getElementById("resultsHead");
 const resultsMeta = document.getElementById("resultsMeta");
+const discoverFilterState = document.getElementById("discoverFilterState");
 const tabButtons = [...document.querySelectorAll("[data-tab]")];
 const searchView = document.getElementById("searchView");
 const leaderboardView = document.getElementById("leaderboardView");
@@ -21,12 +25,36 @@ const leaderboardResults = document.getElementById("leaderboardResults");
 const leaderboardMeta = document.getElementById("leaderboardMeta");
 const leaderboardGenre = document.getElementById("leaderboardGenre");
 const leaderboardSort = document.getElementById("leaderboardSort");
+const myServicesButton = document.getElementById("myServicesButton");
+const includedOnlyWrap = document.getElementById("includedOnlyWrap");
+const includedOnlyInput = document.getElementById("includedOnlyInput");
+const servicesSheet = document.getElementById("servicesSheet");
+const servicesSheetBackdrop = document.getElementById("servicesSheetBackdrop");
+const servicesSheetClose = document.getElementById("servicesSheetClose");
+const servicesOptions = document.getElementById("servicesOptions");
+const servicesDoneButton = document.getElementById("servicesDoneButton");
+const servicesClearButton = document.getElementById("servicesClearButton");
 const cozyAutoCloseTimers = new WeakMap();
 
 const leaderboardState = {
     genre: "all",
     sortOrder: "desc"
 };
+
+const discoverServices = createDiscoverServicesController({
+    results,
+    filterState: discoverFilterState,
+    setResultsMeta,
+    myServicesButton,
+    includedOnlyWrap,
+    includedOnlyInput,
+    sheet: servicesSheet,
+    backdrop: servicesSheetBackdrop,
+    closeButton: servicesSheetClose,
+    servicesOptions,
+    doneButton: servicesDoneButton,
+    clearButton: servicesClearButton
+});
 
 function trackEvent(name, params = {}) {
     if (typeof window.gtag !== "function") {
@@ -38,6 +66,12 @@ function trackEvent(name, params = {}) {
 function setResultsMeta(message) {
     if (resultsMeta) {
         resultsMeta.textContent = message;
+    }
+}
+
+function setResultsHeadVisible(isVisible) {
+    if (resultsHead) {
+        resultsHead.hidden = !isVisible;
     }
 }
 
@@ -380,14 +414,18 @@ async function handleSearch() {
     const query = searchInput.value.trim();
 
     if (!query) {
+        setResultsHeadVisible(false);
         setResultsMeta("Add a title to start your search.");
+        discoverServices.reset();
         renderStatus(results, "Enter a movie title to search.", "empty");
         return;
     }
 
+    setResultsHeadVisible(true);
     setSearchPending(true);
     trackEvent("search", { search_query: query });
     setResultsMeta(`Searching for "${query}"...`);
+    discoverServices.reset();
     renderLoadingSkeletons(results, 6);
 
     try {
@@ -396,6 +434,7 @@ async function handleSearch() {
 
         if (!movies.length) {
             setResultsMeta("No matches found.");
+            discoverServices.reset();
             renderStatus(results, "No movies found. Try another title.", "empty");
             return;
         }
@@ -403,8 +442,11 @@ async function handleSearch() {
         setResultsMeta(`${movies.length} result${movies.length === 1 ? "" : "s"} found.`);
         renderMovies(results, movies);
         hydrateAllCardCoziness();
+        discoverServices.setResults(movies);
+        discoverServices.hydrateStreaming(getStreamingInfo);
     } catch (error) {
         setResultsMeta("Search unavailable.");
+        discoverServices.reset();
         renderStatus(results, "We could not reach the movie service. Please try again.", "error");
     } finally {
         setSearchPending(false);
@@ -442,13 +484,68 @@ async function openTrailer(imdbId, title) {
     popup.location.replace(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
 }
 
+function setStreamingSummary(summary, providers) {
+    if (!summary) {
+        return;
+    }
+
+    const matchedLabels = getMatchingServiceLabels(providers, discoverServices.getSelectedServiceKeys());
+    if (matchedLabels.length === 1) {
+        summary.textContent = `Included with your services on ${matchedLabels[0]}`;
+        return;
+    }
+    if (matchedLabels.length > 1) {
+        summary.textContent = "Included with your services";
+        return;
+    }
+
+    const normalized = providers.map((provider) => {
+        if (typeof provider === "string") {
+            return { name: provider, availabilityType: "stream" };
+        }
+        return provider;
+    });
+
+    const typeRank = { stream: 0, free: 0, subscription: 0, rent: 1, buy: 2 };
+    const ranked = [...normalized].sort((a, b) => {
+        const aType = String(a?.availabilityType || "").toLowerCase();
+        const bType = String(b?.availabilityType || "").toLowerCase();
+        const aRank = Object.hasOwn(typeRank, aType) ? typeRank[aType] : 3;
+        const bRank = Object.hasOwn(typeRank, bType) ? typeRank[bType] : 3;
+        return aRank - bRank;
+    });
+    const best = ranked[0];
+
+    if (best?.name) {
+        const type = String(best.availabilityType || "stream").toLowerCase();
+        if (type === "stream" || type === "free" || type === "subscription") {
+            summary.textContent = `Best value: ${best.name} (included)`;
+        } else {
+            summary.textContent = `Best option: ${best.name} (${type})`;
+        }
+    } else {
+        summary.textContent = "No major subscription platforms right now";
+    }
+}
+
 async function loadStreamingPanel(card, button) {
     const imdbId = card.dataset.imdbId || "";
     const title = card.dataset.title || "";
+    const year = card.dataset.year || "";
     const dataBox = card.querySelector(".data-box");
     const summary = card.querySelector(".movie-streaming-summary");
 
     if (!dataBox || !button) {
+        return;
+    }
+
+    const cachedProviders = discoverServices.getCachedProviders(imdbId);
+    if (cachedProviders) {
+        renderStreamingProviders(dataBox, cachedProviders, { selectedServiceKeys: discoverServices.getSelectedServiceKeys() });
+        setStreamingSummary(summary, cachedProviders);
+        dataBox.dataset.loaded = "1";
+        dataBox.classList.add("visible");
+        button.textContent = "Hide options";
         return;
     }
 
@@ -458,40 +555,11 @@ async function loadStreamingPanel(card, button) {
     dataBox.classList.add("visible");
 
     try {
-        const payload = await getStreamingInfo(imdbId, title);
+        const payload = await getStreamingInfo(imdbId, title, year);
         const providers = payload?.data?.providers || [];
-        renderStreamingProviders(dataBox, providers);
-
-        if (summary) {
-            const normalized = providers.map((provider) => {
-                if (typeof provider === "string") {
-                    return { name: provider, availabilityType: "stream" };
-                }
-                return provider;
-            });
-
-            const typeRank = { stream: 0, free: 0, subscription: 0, rent: 1, buy: 2 };
-            const ranked = [...normalized].sort((a, b) => {
-                const aType = String(a?.availabilityType || "").toLowerCase();
-                const bType = String(b?.availabilityType || "").toLowerCase();
-                const aRank = Object.hasOwn(typeRank, aType) ? typeRank[aType] : 3;
-                const bRank = Object.hasOwn(typeRank, bType) ? typeRank[bType] : 3;
-                return aRank - bRank;
-            });
-            const best = ranked[0];
-
-            if (best?.name) {
-                const type = String(best.availabilityType || "stream").toLowerCase();
-                if (type === "stream" || type === "free" || type === "subscription") {
-                    summary.textContent = `Best value: ${best.name} (included)`;
-                } else {
-                    summary.textContent = `Best option: ${best.name} (${type})`;
-                }
-            } else {
-                summary.textContent = "No major subscription platforms right now";
-            }
-        }
-
+        discoverServices.storeProviders(imdbId, providers);
+        renderStreamingProviders(dataBox, providers, { selectedServiceKeys: discoverServices.getSelectedServiceKeys() });
+        setStreamingSummary(summary, providers);
         dataBox.dataset.loaded = "1";
         button.textContent = "Hide options";
     } catch (error) {
@@ -623,6 +691,7 @@ results.addEventListener("click", (event) => {
 });
 
 setActiveView("discover");
+setResultsHeadVisible(false);
 
 results.addEventListener("keydown", (event) => {
     const chip = event.target.closest(".cozy-chip");

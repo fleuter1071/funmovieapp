@@ -27,8 +27,8 @@ export async function searchMovies(query) {
     return fetchJson(`/search?q=${encodeURIComponent(query)}`);
 }
 
-export async function getStreamingInfo(imdbId, title) {
-    return fetchJson(`/streaming?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}`);
+export async function getStreamingInfo(imdbId, title, year = "") {
+    return fetchJson(`/streaming?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}&year=${encodeURIComponent(year)}`);
 }
 
 export async function getTrailerInfo(imdbId, title) {
