@@ -253,3 +253,70 @@ Implemented a compact Discover-level My Services control row below Search with a
 1. Smoke test the deployed app for My Services on both desktop and mobile widths.
 2. Validate a few additional ambiguous-title cases beyond Friday the 13th to confirm the year-aware streaming fix generalizes well.
 3. If the feature performs well in production, decide whether to add richer badge copy or a small persistent summary of selected services later without expanding scope into accounts.
+
+## Date/time
+2026-03-17 00:00:00 -04:00
+
+## Feature name
+Repository Agent Instructions File
+
+## Summary
+Added `AGENTS.md` as the stable repo-level instruction file for future agent sessions. It captures the app's product context, architecture entrypoints, local run/test workflow, environment expectations, risk areas, and collaboration preferences so new sessions can get aligned faster without relying only on historical memory notes.
+
+## Files changed
+- C:\Users\dougs\Movie_Fun_Codex\AGENTS.md
+- C:\Users\dougs\Movie_Fun_Codex\PROJECT_MEMORY.md
+
+## Assumptions
+- `AGENTS.md` should remain focused on stable working conventions, not feature history.
+- Ongoing implementation history and handoff details should continue to live in `PROJECT_MEMORY.md` and `Move_App_Handoff.md`.
+- Future sessions should read `AGENTS.md` early to align communication style and repo workflow.
+
+## Known limitations
+- `AGENTS.md` is only useful if it is kept current when repo conventions materially change.
+- It does not replace deeper code inspection or the detailed milestone history in project memory.
+
+## Next step
+Use `AGENTS.md` as the first-stop repo instruction file in future sessions, then consult `PROJECT_MEMORY.md` and `Move_App_Handoff.md` for recent feature context.
+
+## Date/time
+2026-03-17 21:40:00 -04:00
+
+## Feature name
+Static File Exposure Lockdown + Fail-Closed Coziness Store Selection
+
+## Summary
+Hardened the app in two critical ways. First, the Express server no longer serves the entire repo as static content and now exposes only the frontend asset paths required by the browser plus `index.html`. Second, the coziness store selection now validates configuration explicitly and fails closed when `COZINESS_STORE=supabase` is set without valid Supabase environment variables, instead of silently falling back to SQLite. Added startup diagnostics for the active store and regression tests covering both behaviors.
+
+## Files changed
+- C:\Users\dougs\Movie_Fun_Codex\server\app.js
+- C:\Users\dougs\Movie_Fun_Codex\server\services\cozinessStore.js
+- C:\Users\dougs\Movie_Fun_Codex\test\hardening.test.js
+- C:\Users\dougs\Movie_Fun_Codex\PROJECT_MEMORY.md
+
+## Technical Architecture changes or key technical decisions made
+- Replaced repo-root static serving with explicit public mounts for `/styles` and `/src`, while keeping SPA fallback to `index.html`.
+- Added startup-time store validation so production-like misconfiguration is surfaced immediately instead of causing hidden data writes to the wrong backend.
+- Added lightweight store diagnostics via startup logging and `cozinessStore` in health/readiness payloads.
+- Added regression tests that assert internal files are not exposed and store validation fails as expected for broken Supabase configuration.
+
+## Assumptions
+- The frontend only needs `index.html`, `/styles`, and `/src` publicly served in the current architecture.
+- Silent fallback from explicitly requested Supabase storage is a worse outcome than startup failure.
+- Local development can still use SQLite intentionally via development defaults or explicit `COZINESS_STORE=sqlite`.
+
+## Known limitations
+- Direct requests to internal file paths now fall back to `index.html` rather than returning a hard 404, which is acceptable for current SPA routing but not as strict as a dedicated public asset manifest.
+- This work does not yet remove leaderboard metadata backfill from the request path.
+- Browser-level manual QA is still needed for search, trailer, streaming, My Services, and coziness-save interactions.
+
+## Verification
+- `npm test` passed with 27 tests and 0 failures.
+- Verified local startup logs active store selection.
+- Verified `GET /api/v1/health`, `GET /api/v1/readiness`, and `GET /api/v1/leaderboard?genre=all&sortOrder=desc` succeed locally.
+- Verified `/PROJECT_MEMORY.md` and `/movie_fun_dev.sqlite` no longer expose raw file contents from the running server.
+
+## Next steps
+1. Run a short browser QA pass for search, trailer, Where to Watch, My Services, cozy save, and Leaderboard interactions.
+2. Remove leaderboard metadata backfill from the live request path and move it to a background/admin flow.
+3. Continue hardening observability around upstream dependency degradation because critic scores and watch availability are product-critical.

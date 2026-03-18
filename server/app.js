@@ -1,9 +1,17 @@
-﻿const fs = require("node:fs");
+const fs = require("node:fs");
 const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
 const { searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
-const { getCozinessRating, getCozinessRatingsBatch, upsertCozinessRating, upsertMovieMetadata, getLeaderboard } = require("./services/cozinessStore");
+const {
+    assertStoreConfiguration,
+    getStoreStatus,
+    getCozinessRating,
+    getCozinessRatingsBatch,
+    upsertCozinessRating,
+    upsertMovieMetadata,
+    getLeaderboard
+} = require("./services/cozinessStore");
 
 function loadEnvFromFile(filePath) {
     if (!fs.existsSync(filePath)) {
@@ -34,6 +42,7 @@ function loadEnvFromFile(filePath) {
 
 loadEnvFromFile(path.resolve(__dirname, "../.env"));
 
+const APP_ROOT = path.resolve(__dirname, "..");
 const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const RATE_WINDOW_MS = 60 * 1000;
 const RATE_MAX = 60;
@@ -100,6 +109,29 @@ function sanitizeMovieMetadata(value) {
         posterUrl: posterUrl || null,
         genres
     };
+}
+
+function getSafeStoreStatus() {
+    try {
+        return getStoreStatus();
+    } catch (error) {
+        return {
+            activeStore: "unavailable",
+            reason: error?.code || "unknown",
+            supabaseConfigured: false
+        };
+    }
+}
+
+function logStartupConfiguration() {
+    const storeStatus = getStoreStatus();
+    console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "startup_configuration",
+        activeStore: storeStatus.activeStore,
+        storeReason: storeStatus.reason,
+        supabaseConfigured: storeStatus.supabaseConfigured
+    }));
 }
 
 function createRequestIdMiddleware() {
@@ -215,7 +247,8 @@ function createApp(
             service: "movie-fun-api",
             uptimeSeconds: Math.floor(process.uptime()),
             timestamp: new Date().toISOString(),
-            requestId: req.requestId
+            requestId: req.requestId,
+            cozinessStore: getSafeStoreStatus().activeStore
         });
     });
 
@@ -226,7 +259,8 @@ function createApp(
                 status: "ready",
                 upstream: "reachable",
                 timestamp: new Date().toISOString(),
-                requestId: req.requestId
+                requestId: req.requestId,
+                cozinessStore: getSafeStoreStatus().activeStore
             });
         } catch (error) {
             logUpstreamError(req, "/api/v1/readiness", error);
@@ -420,16 +454,19 @@ function createApp(
         }
     });
 
-    app.use(express.static(path.resolve(__dirname, "..")));
+    app.use("/styles", express.static(path.join(APP_ROOT, "styles"), { fallthrough: false }));
+    app.use("/src", express.static(path.join(APP_ROOT, "src"), { fallthrough: false }));
 
     app.get("*", (req, res) => {
-        res.sendFile(path.resolve(__dirname, "..", "index.html"));
+        res.sendFile(path.join(APP_ROOT, "index.html"));
     });
 
     return app;
 }
 
 function startServer(port = DEFAULT_PORT) {
+    assertStoreConfiguration();
+    logStartupConfiguration();
     const app = createApp();
     return app.listen(port, () => {
         console.log(`Server running on http://localhost:${port}`);
@@ -446,4 +483,3 @@ module.exports = {
     isValidImdbId,
     isValidTextQuery
 };
-

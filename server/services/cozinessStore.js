@@ -7,25 +7,88 @@ function hasSupabaseConfig() {
     return Boolean(String(process.env.SUPABASE_URL || "").trim() && String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim());
 }
 
-function shouldUseSqlite() {
+function createStoreConfigurationError(message) {
+    const error = new Error(message);
+    error.code = "COZINESS_STORE_MISCONFIGURED";
+    return error;
+}
+
+function resolveStoreStatus() {
     const storeOverride = String(process.env.COZINESS_STORE || "").trim().toLowerCase();
+    const environment = String(process.env.NODE_ENV || "").trim().toLowerCase();
+    const supabaseConfigured = hasSupabaseConfig();
+
+    if (storeOverride && storeOverride !== "sqlite" && storeOverride !== "supabase") {
+        throw createStoreConfigurationError("COZINESS_STORE must be 'sqlite' or 'supabase' when set.");
+    }
+
     if (storeOverride === "sqlite") {
-        return true;
+        return {
+            activeStore: "sqlite",
+            service: sqliteService,
+            reason: "explicit_override",
+            supabaseConfigured
+        };
     }
+
     if (storeOverride === "supabase") {
-        return false;
+        if (!supabaseConfigured) {
+            throw createStoreConfigurationError("COZINESS_STORE is set to 'supabase' but Supabase env vars are missing.");
+        }
+
+        return {
+            activeStore: "supabase",
+            service: supabaseService,
+            reason: "explicit_override",
+            supabaseConfigured
+        };
     }
-    return String(process.env.NODE_ENV || "").trim().toLowerCase() === "development";
+
+    if (environment === "development") {
+        return {
+            activeStore: "sqlite",
+            service: sqliteService,
+            reason: "development_default",
+            supabaseConfigured
+        };
+    }
+
+    if (supabaseConfigured) {
+        return {
+            activeStore: "supabase",
+            service: supabaseService,
+            reason: "supabase_env_detected",
+            supabaseConfigured
+        };
+    }
+
+    if (environment === "production") {
+        throw createStoreConfigurationError("Production coziness store is not configured. Set COZINESS_STORE and the required backing-store env vars.");
+    }
+
+    return {
+        activeStore: "sqlite",
+        service: sqliteService,
+        reason: "local_fallback",
+        supabaseConfigured
+    };
+}
+
+function getStoreStatus() {
+    const resolved = resolveStoreStatus();
+    return {
+        activeStore: resolved.activeStore,
+        reason: resolved.reason,
+        supabaseConfigured: resolved.supabaseConfigured
+    };
+}
+
+function assertStoreConfiguration() {
+    resolveStoreStatus();
 }
 
 function getStore() {
-    if (shouldUseSqlite()) {
-        return sqliteService;
-    }
-    if (hasSupabaseConfig()) {
-        return supabaseService;
-    }
-    return sqliteService;
+    return resolveStoreStatus().service;
 }
 
 async function getCozinessRating(imdbId, ctx) {
@@ -153,6 +216,8 @@ async function getLeaderboard(options, ctx) {
 }
 
 module.exports = {
+    assertStoreConfiguration,
+    getStoreStatus,
     getCozinessRating,
     getCozinessRatingsBatch,
     upsertCozinessRating,
