@@ -7,7 +7,20 @@ export const CURATED_STREAMING_SERVICES = [
     { key: "hulu", label: "Hulu", aliases: ["hulu"] },
     { key: "prime-video", label: "Prime Video", aliases: ["prime video", "amazon video", "amazon prime video"] },
     { key: "disney-plus", label: "Disney+", aliases: ["disney plus", "disney+"] },
-    { key: "paramount-plus", label: "Paramount+", aliases: ["paramount plus", "paramount+"] },
+    {
+        key: "paramount-plus",
+        label: "Paramount+",
+        aliases: [
+            "paramount plus",
+            "paramount+",
+            "paramount plus amazon channel",
+            "paramount+ amazon channel",
+            "paramount plus apple tv channel",
+            "paramount+ apple tv channel",
+            "paramount plus roku premium channel",
+            "paramount+ roku premium channel"
+        ]
+    },
     { key: "peacock", label: "Peacock", aliases: ["peacock", "peacock premium"] },
     { key: "apple-tv-plus", label: "Apple TV+", aliases: ["apple tv+", "apple tv plus"] },
     { key: "starz", label: "Starz", aliases: ["starz"] },

@@ -11,6 +11,7 @@ import {
 test("normalizeServiceKey maps common provider aliases to curated keys", () => {
     assert.equal(normalizeServiceKey("Disney Plus"), "disney-plus");
     assert.equal(normalizeServiceKey("Paramount Plus"), "paramount-plus");
+    assert.equal(normalizeServiceKey("Paramount Plus Apple TV Channel"), "paramount-plus");
     assert.equal(normalizeServiceKey("Amazon Video"), "prime-video");
     assert.equal(normalizeServiceKey("Peacock Premium"), "peacock");
 });
@@ -39,4 +40,13 @@ test("matching only counts included providers on selected services", () => {
 
     assert.deepEqual(getMatchingServiceLabels(providers, ["netflix", "prime-video", "max"]), ["Netflix", "Max"]);
     assert.equal(getMatchBadgeText(providers, ["netflix", "prime-video", "max"]), "On Netflix + Max");
+});
+
+test("Paramount Plus channel variants still match selected Paramount Plus service", () => {
+    const providers = [
+        { name: "Paramount Plus Apple TV Channel", availabilityType: "subscription" }
+    ];
+
+    assert.deepEqual(getMatchingServiceLabels(providers, ["paramount-plus"]), ["Paramount+"]);
+    assert.equal(getMatchBadgeText(providers, ["paramount-plus"]), "On Paramount+");
 });
