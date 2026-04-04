@@ -47,7 +47,7 @@ const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const RATE_WINDOW_MS = 60 * 1000;
 const RATE_MAX = 60;
 const MAX_QUERY_LENGTH = 120;
-const READINESS_TIMEOUT_MS = 3000;
+const READINESS_TIMEOUT_MS = 6000;
 
 function createRequestId() {
     if (typeof crypto.randomUUID === "function") {
@@ -57,15 +57,19 @@ function createRequestId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function sendError(res, requestId, status, code, message, retryable) {
-    res.status(status).json({
-        error: {
-            code,
-            message,
-            retryable,
-            requestId
-        }
-    });
+function sendError(res, requestId, status, code, message, retryable, details = null) {
+    const payload = {
+        code,
+        message,
+        retryable,
+        requestId
+    };
+
+    if (details && typeof details === "object") {
+        payload.details = details;
+    }
+
+    res.status(status).json({ error: payload });
 }
 
 function isValidImdbId(value) {
@@ -173,10 +177,18 @@ function logUpstreamError(req, route, error) {
         route,
         event: "UPSTREAM_FAILURE",
         name: error?.name || "Error",
-        message: error?.message || "Unknown upstream error"
+        message: error?.message || "Unknown upstream error",
+        upstream: error?.upstream || null
     };
 
     console.error(JSON.stringify(log));
+}
+
+function getUpstreamErrorDetails(error) {
+    return {
+        failureType: String(error?.upstream?.failureType || "unknown"),
+        upstreamStatus: Number.isInteger(error?.upstream?.status) ? error.upstream.status : undefined
+    };
 }
 
 function createRateLimiter() {
@@ -212,10 +224,27 @@ async function defaultReadinessCheck(ctx = {}) {
         });
 
         if (!response.ok) {
-            throw new Error(`Upstream response ${response.status}`);
+            const error = new Error(`Upstream response ${response.status}`);
+            error.code = "UPSTREAM_HTTP_ERROR";
+            error.upstream = {
+                failureType: "http_error",
+                status: response.status,
+                url: "https://imdb.iamidiotareyoutoo.com/search?q=scream",
+                timeoutMs: READINESS_TIMEOUT_MS
+            };
+            throw error;
         }
 
         return true;
+    } catch (error) {
+        if (!error?.upstream) {
+            error.upstream = {
+                failureType: error?.name === "AbortError" ? "timeout" : "network_error",
+                url: "https://imdb.iamidiotareyoutoo.com/search?q=scream",
+                timeoutMs: READINESS_TIMEOUT_MS
+            };
+        }
+        throw error;
     } finally {
         clearTimeout(timeoutId);
     }
@@ -264,7 +293,15 @@ function createApp(
             });
         } catch (error) {
             logUpstreamError(req, "/api/v1/readiness", error);
-            sendError(res, req.requestId, 503, "UPSTREAM_UNREADY", "Upstream dependency is not ready.", true);
+            sendError(
+                res,
+                req.requestId,
+                503,
+                "UPSTREAM_UNREADY",
+                "Movie data provider is temporarily unavailable.",
+                true,
+                getUpstreamErrorDetails(error)
+            );
         }
     });
 
@@ -281,7 +318,15 @@ function createApp(
             res.json({ data, requestId: req.requestId });
         } catch (error) {
             logUpstreamError(req, "/api/v1/search", error);
-            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch search results.", true);
+            sendError(
+                res,
+                req.requestId,
+                502,
+                "UPSTREAM_FAILURE",
+                "Movie search is temporarily unavailable. Please try again shortly.",
+                true,
+                getUpstreamErrorDetails(error)
+            );
         }
     });
 

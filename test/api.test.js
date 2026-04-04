@@ -255,7 +255,11 @@ test("upstream failure returns requestId and 502", async () => {
             return { url: "https://www.youtube.com/results?search_query=movie+trailer", source: "youtube-fallback", imdbId: null };
         },
         async searchMovies() {
-            throw new Error("upstream blew up");
+            const error = new Error("upstream blew up");
+            error.upstream = {
+                failureType: "timeout"
+            };
+            throw error;
         },
         async getStreamingProviders() {
             return { providers: [] };
@@ -268,6 +272,8 @@ test("upstream failure returns requestId and 502", async () => {
 
         const payload = await response.json();
         assert.equal(payload.error.code, "UPSTREAM_FAILURE");
+        assert.equal(payload.error.message, "Movie search is temporarily unavailable. Please try again shortly.");
+        assert.equal(payload.error.details.failureType, "timeout");
         assert.ok(payload.error.requestId);
         assert.equal(response.headers.get("x-request-id"), payload.error.requestId);
     }, failingServices);
@@ -276,7 +282,12 @@ test("upstream failure returns requestId and 502", async () => {
 test("readiness failure returns requestId and 503", async () => {
     const failingServices = {
         async readinessCheck() {
-            throw new Error("dependency down");
+            const error = new Error("dependency down");
+            error.upstream = {
+                failureType: "http_error",
+                status: 503
+            };
+            throw error;
         },
         async resolveTrailerUrl() {
             return { url: "https://www.youtube.com/results?search_query=movie+trailer", source: "youtube-fallback", imdbId: null };
@@ -295,6 +306,9 @@ test("readiness failure returns requestId and 503", async () => {
 
         const payload = await response.json();
         assert.equal(payload.error.code, "UPSTREAM_UNREADY");
+        assert.equal(payload.error.message, "Movie data provider is temporarily unavailable.");
+        assert.equal(payload.error.details.failureType, "http_error");
+        assert.equal(payload.error.details.upstreamStatus, 503);
         assert.ok(payload.error.requestId);
         assert.equal(response.headers.get("x-request-id"), payload.error.requestId);
     }, failingServices);

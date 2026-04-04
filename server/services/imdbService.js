@@ -3,8 +3,8 @@ const STREAMING_CACHE_TTL_MS = 15 * 60 * 1000;
 const TRAILER_CACHE_TTL_MS = 10 * 60 * 1000;
 const TRAILER_FAILURE_CACHE_TTL_MS = 60 * 1000;
 const OMDB_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const TIMEOUT_MS = 5000;
-const RETRIES = 1;
+const TIMEOUT_MS = 8000;
+const RETRIES = 2;
 
 const searchCache = new Map();
 const streamingCache = new Map();
@@ -70,12 +70,20 @@ async function fetchJsonWithRetry(url, requestId) {
             });
 
             if (!response.ok) {
-                throw new Error(`Upstream response ${response.status}`);
+                const error = new Error(`Upstream response ${response.status}`);
+                error.code = "UPSTREAM_HTTP_ERROR";
+                error.upstream = {
+                    failureType: "http_error",
+                    status: response.status,
+                    url,
+                    method: "GET"
+                };
+                throw error;
             }
 
             return await response.json();
         } catch (error) {
-            lastError = error;
+            lastError = normalizeUpstreamError(error, url, attempt, "GET");
 
             if (attempt === RETRIES) {
                 throw lastError;
@@ -105,12 +113,20 @@ async function fetchWithMethodRetry(url, requestId, method = "GET") {
             });
 
             if (!response.ok) {
-                throw new Error(`Upstream response ${response.status}`);
+                const error = new Error(`Upstream response ${response.status}`);
+                error.code = "UPSTREAM_HTTP_ERROR";
+                error.upstream = {
+                    failureType: "http_error",
+                    status: response.status,
+                    url,
+                    method
+                };
+                throw error;
             }
 
             return response;
         } catch (error) {
-            lastError = error;
+            lastError = normalizeUpstreamError(error, url, attempt, method);
 
             if (attempt === RETRIES) {
                 throw lastError;
@@ -163,6 +179,32 @@ function logTrailerDecision(requestId, details) {
     };
 
     console.log(JSON.stringify(log));
+}
+
+function normalizeUpstreamError(error, url, attempt, method = "GET") {
+    const normalized = error instanceof Error ? error : new Error(String(error || "Unknown upstream error"));
+    const failureType = normalized?.name === "AbortError"
+        ? "timeout"
+        : normalized?.code === "UPSTREAM_HTTP_ERROR"
+            ? "http_error"
+            : normalized?.cause?.code === "ENOTFOUND" || normalized?.code === "ENOTFOUND"
+                ? "dns_failure"
+                : normalized?.cause?.code === "ECONNRESET" || normalized?.code === "ECONNRESET"
+                    ? "connection_reset"
+                    : normalized?.cause?.code === "ECONNREFUSED" || normalized?.code === "ECONNREFUSED"
+                        ? "connection_refused"
+                        : "network_error";
+
+    normalized.upstream = {
+        ...(normalized.upstream || {}),
+        failureType,
+        url,
+        method,
+        attempt: attempt + 1,
+        timeoutMs: TIMEOUT_MS
+    };
+
+    return normalized;
 }
 
 function buildYoutubeFallbackUrl(title) {

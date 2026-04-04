@@ -49,6 +49,9 @@ Read these first when getting up to speed:
 - Install dependencies: `npm install`
 - Start app: `npm start`
 - Run tests: `npm test`
+- Run browser smoke tests: `npm run test:e2e`
+- Watch browser smoke tests live: `npm run test:e2e:headed`
+- Open Playwright UI runner: `npm run test:e2e:ui`
 
 If the local server appears stale or behavior does not match code, use `LOCAL_SERVER_RESTART_INSTRUCTIONS.txt`.
 
@@ -103,7 +106,7 @@ Pay extra attention to:
 - Mobile interaction quality for sheets, accordions, and action stacks
 
 Current known gap:
-- The repo has automated Node tests, but no full browser E2E coverage yet.
+- The repo now has focused browser smoke coverage for core flows, but it still does not have broad cross-browser or full production-backed E2E coverage.
 
 ## Collaboration Style For This Repo
 When working with the user in this repo:

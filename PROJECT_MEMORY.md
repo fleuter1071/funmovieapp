@@ -320,3 +320,53 @@ Hardened the app in two critical ways. First, the Express server no longer serve
 1. Run a short browser QA pass for search, trailer, Where to Watch, My Services, cozy save, and Leaderboard interactions.
 2. Remove leaderboard metadata backfill from the live request path and move it to a background/admin flow.
 3. Continue hardening observability around upstream dependency degradation because critic scores and watch availability are product-critical.
+
+## Date/time
+2026-04-03 20:57:00 -04:00
+
+## Feature name
+Browser Smoke Test Coverage + Visual Playwright Commands
+
+## Summary
+Added Playwright-based browser smoke coverage for the core Discover and Leaderboard flows using a deterministic local mock server. Also added optional visual commands so tests can run invisibly by default or visibly when someone wants to watch the browser interact with the app.
+
+## Files changed
+- C:\Users\dougs\Movie_Fun_Codex\package.json
+- C:\Users\dougs\Movie_Fun_Codex\package-lock.json
+- C:\Users\dougs\Movie_Fun_Codex\playwright.config.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\mockServer.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\smoke.spec.js
+- C:\Users\dougs\Movie_Fun_Codex\AGENTS.md
+- C:\Users\dougs\Movie_Fun_Codex\PROJECT_MEMORY.md
+
+## Technical Architecture changes or key technical decisions made
+- Added Playwright as a dev dependency and kept browser tests separate from the existing Node test suite.
+- Used a local mock Express server for E2E runs so browser tests exercise the real frontend against stable data instead of flaky third-party APIs.
+- Added a reset endpoint in the mock server so each test starts from a clean known state.
+- Scoped the Node test command to `test/*.test.js` and `test/*.test.mjs` so Playwright files are not accidentally executed by `node --test`.
+- Added optional visual commands: `npm run test:e2e:headed` and `npm run test:e2e:ui`.
+
+## Assumptions
+- Stable mocked data is the right first step for UI regression coverage in this repo.
+- Browser smoke coverage should focus on the highest-risk user flows before expanding to broader permutations.
+- Visual Playwright commands are useful for demos and debugging but should not replace the default headless CI-friendly path.
+
+## Known limitations
+- The browser suite currently uses mocked backend responses, so it does not validate live third-party integrations.
+- Coverage is currently focused smoke coverage, not full regression coverage across all error states, browsers, and device sizes.
+- Playwright test runs generate local artifacts such as `test-results/` when failures occur.
+
+## Key learnings that you can bring with you to future sessions
+- Keeping browser tests deterministic with a local mock server makes the suite much more maintainable for an app that depends on unstable outside movie APIs.
+- It is important to isolate Playwright tests from `node --test` so the two runners do not interfere with each other.
+- Visual test commands are useful both for debugging flaky UI behavior and for showing non-technical stakeholders what automated QA is doing.
+
+## Remaining TODOs
+- Consider adding a small `.gitignore` update for Playwright artifacts such as `test-results/` if they should stay untracked.
+- Expand browser coverage to include more empty/error/degraded states and a mobile-width pass.
+- Decide whether to add a production-backed smoke layer later for a smaller set of live integration checks.
+
+## Next steps
+1. Optionally add Playwright artifact paths to `.gitignore`.
+2. Add one or two mobile-width smoke scenarios for the services sheet and card interactions.
+3. Later, add a very small production-backed smoke suite for critical routes if live integration confidence becomes important.

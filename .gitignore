@@ -7,3 +7,5 @@ server-run.log
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+test-results/
+playwright-report/
