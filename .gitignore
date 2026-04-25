@@ -4,8 +4,10 @@ npm-debug.log*
 .env.*
 !.env.example
 server-run.log
+server-run*.log
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 test-results/
 playwright-report/
+sample_data/

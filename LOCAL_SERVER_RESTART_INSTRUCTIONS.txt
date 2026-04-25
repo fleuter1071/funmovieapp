@@ -1,0 +1,22 @@
+Movie App Local Restart + Verify Instructions
+
+1) Kill anything already using port 3000
+
+netstat -ano | findstr :3000
+
+If you see a PID in the last column, stop it:
+Stop-Process -Id <PID> -Force
+
+2) Start the app fresh (in foreground for debugging)
+
+npm start
+
+3) Verify server endpoints from a second PowerShell window
+
+curl http://127.0.0.1:3000/api/v1/health
+curl "http://127.0.0.1:3000/api/v1/readiness"
+curl "http://127.0.0.1:3000/api/v1/leaderboard?genre=all&sortOrder=desc"
+
+4) If something fails
+
+Copy/paste the exact npm start output and endpoint error output for debugging.

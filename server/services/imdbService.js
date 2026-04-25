@@ -275,6 +275,46 @@ async function getOmdbCriticScores(imdbId, requestId) {
     }
 }
 
+async function getOmdbMovieDetails(imdbId, requestId) {
+    const normalizedImdbId = String(imdbId || "").trim();
+    if (!normalizedImdbId) {
+        return null;
+    }
+
+    const apiKey = getOmdbApiKey();
+    if (!apiKey) {
+        return null;
+    }
+
+    const url = `https://www.omdbapi.com/?i=${encodeURIComponent(normalizedImdbId)}&apikey=${encodeURIComponent(apiKey)}`;
+
+    try {
+        const payload = await fetchJsonWithRetry(url, requestId);
+        if (String(payload?.Response || "").toLowerCase() === "false") {
+            return null;
+        }
+
+        const genres = String(payload?.Genre || "")
+            .split(",")
+            .map((genre) => genre.trim())
+            .filter(Boolean);
+        const runtimeMatch = String(payload?.Runtime || "").match(/(\d+)/);
+        const runtimeMins = runtimeMatch ? Number.parseInt(runtimeMatch[1], 10) : null;
+        const posterUrl = String(payload?.Poster || "").trim();
+
+        return {
+            imdbId: normalizedImdbId,
+            title: String(payload?.Title || "").trim(),
+            year: Number.parseInt(String(payload?.Year || "").trim(), 10) || null,
+            posterUrl: posterUrl && posterUrl.toUpperCase() !== "N/A" ? posterUrl : "",
+            genres,
+            runtimeMins: Number.isInteger(runtimeMins) ? runtimeMins : null
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
 async function enrichSearchResultsWithCriticScores(movies, requestId) {
     if (!Array.isArray(movies) || !movies.length || !getOmdbApiKey()) {
         return movies;
@@ -511,6 +551,53 @@ async function searchMovies(query, ctx = {}) {
     return enriched;
 }
 
+async function getMovieMetadata({ imdbId, title, year }, ctx = {}) {
+    const requestId = ctx.requestId || "unknown";
+    const normalizedImdbId = String(imdbId || "").trim();
+    const normalizedTitle = String(title || "").trim();
+    const normalizedYear = String(year || "").trim();
+
+    if (!normalizedImdbId && !normalizedTitle) {
+        return null;
+    }
+
+    const omdbDetails = await getOmdbMovieDetails(normalizedImdbId, requestId);
+    if (omdbDetails?.posterUrl) {
+        return omdbDetails;
+    }
+
+    if (!normalizedTitle) {
+        return omdbDetails || null;
+    }
+
+    const searchResults = await searchMovies(normalizedTitle, ctx);
+    const normalizedResult = searchResults.find((movie) => {
+        if (normalizedImdbId && String(movie?.imdbId || "").trim() === normalizedImdbId) {
+            return true;
+        }
+        if (!normalizedYear) {
+            return false;
+        }
+        return String(movie?.title || "").trim().toLowerCase() === normalizedTitle.toLowerCase()
+            && String(movie?.year || "").trim() === normalizedYear;
+    }) || null;
+
+    if (!normalizedResult) {
+        return omdbDetails || null;
+    }
+
+    return {
+        imdbId: normalizedResult.imdbId || normalizedImdbId,
+        title: normalizedResult.title || omdbDetails?.title || normalizedTitle,
+        year: Number.parseInt(String(normalizedResult.year || omdbDetails?.year || normalizedYear), 10) || null,
+        posterUrl: String(normalizedResult.posterUrl || omdbDetails?.posterUrl || "").trim(),
+        genres: Array.isArray(omdbDetails?.genres) && omdbDetails.genres.length
+            ? omdbDetails.genres
+            : [],
+        runtimeMins: omdbDetails?.runtimeMins ?? null
+    };
+}
+
 async function getStreamingProviders({ imdbId, title, year }, ctx = {}) {
     const requestId = ctx.requestId || "unknown";
     const searchQuery = buildStreamingQuery({ imdbId, title, year });
@@ -650,6 +737,7 @@ async function resolveTrailerUrl({ imdbId, title }, ctx = {}) {
 }
 
 module.exports = {
+    getMovieMetadata,
     searchMovies,
     getStreamingProviders,
     resolveTrailerUrl,

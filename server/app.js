@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const express = require("express");
 const path = require("path");
 const crypto = require("node:crypto");
-const { searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
+const { getMovieMetadata, searchMovies, getStreamingProviders, resolveTrailerUrl } = require("./services/imdbService");
 const {
     assertStoreConfiguration,
     getStoreStatus,
@@ -253,6 +253,7 @@ async function defaultReadinessCheck(ctx = {}) {
 function createApp(
     services = {
         searchMovies,
+        getMovieMetadata,
         getStreamingProviders,
         resolveTrailerUrl,
         getCozinessRating,
@@ -260,15 +261,19 @@ function createApp(
         upsertCozinessRating,
         upsertMovieMetadata,
         getLeaderboard
-    }
+    },
+    options = {}
 ) {
     const app = express();
     const readinessCheck = typeof services.readinessCheck === "function" ? services.readinessCheck : defaultReadinessCheck;
+    const rateLimitEnabled = options.rateLimit !== false;
 
     app.use(express.json());
     app.use(createRequestIdMiddleware());
     app.use(createRequestLogger());
-    app.use(createRateLimiter());
+    if (rateLimitEnabled) {
+        app.use(createRateLimiter());
+    }
 
     app.get("/api/v1/health", (req, res) => {
         res.json({
@@ -365,6 +370,44 @@ function createApp(
         } catch (error) {
             logUpstreamError(req, "/api/v1/streaming", error);
             sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch streaming providers.", true);
+        }
+    });
+
+    app.get("/api/v1/movie-metadata", async (req, res) => {
+        const imdbId = String(req.query.imdbId || "").trim();
+        const title = String(req.query.title || "").trim();
+        const year = String(req.query.year || "").trim();
+
+        const hasValidImdbId = imdbId.length === 0 || isValidImdbId(imdbId);
+        const hasValidTitle = title.length === 0 || isValidTextQuery(title);
+        const hasValidYear = year.length === 0 || /^\d{4}$/.test(year);
+
+        if (!imdbId && !title) {
+            sendError(res, req.requestId, 400, "INVALID_QUERY", "Provide imdbId or title.", false);
+            return;
+        }
+
+        if (!hasValidImdbId) {
+            sendError(res, req.requestId, 400, "INVALID_IMDB_ID", "imdbId must look like tt1234567.", false);
+            return;
+        }
+
+        if (!hasValidTitle) {
+            sendError(res, req.requestId, 400, "INVALID_TITLE", "title must be 1-120 characters when provided.", false);
+            return;
+        }
+
+        if (!hasValidYear) {
+            sendError(res, req.requestId, 400, "INVALID_YEAR", "year must be a 4-digit year when provided.", false);
+            return;
+        }
+
+        try {
+            const data = await services.getMovieMetadata({ imdbId, title, year }, { requestId: req.requestId });
+            res.json({ data, requestId: req.requestId });
+        } catch (error) {
+            logUpstreamError(req, "/api/v1/movie-metadata", error);
+            sendError(res, req.requestId, 502, "UPSTREAM_FAILURE", "Failed to fetch movie metadata.", true);
         }
     });
 

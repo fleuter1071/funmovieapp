@@ -104,6 +104,20 @@ function createServices() {
         async searchMovies() {
             return buildSearchResults();
         },
+        async getMovieMetadata({ imdbId }) {
+            const movie = state.movieMetadata.get(imdbId);
+            if (!movie) {
+                return null;
+            }
+            return {
+                imdbId: movie.imdbId,
+                title: movie.title,
+                year: movie.year,
+                posterUrl: movie.posterUrl,
+                genres: movie.genres,
+                runtimeMins: movie.imdbId === "tt0117571" ? 111 : 101
+            };
+        },
         async resolveTrailerUrl({ imdbId, title }) {
             return {
                 url: `${baseUrl}/__e2e/trailer/${encodeURIComponent(imdbId || title || "movie")}`,
@@ -201,7 +215,7 @@ function createServices() {
     };
 }
 
-const app = createApp(createServices());
+const app = createApp(createServices(), { rateLimit: false });
 
 app.post("/__e2e/reset", (_req, res) => {
     resetState();

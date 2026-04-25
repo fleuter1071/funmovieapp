@@ -3,6 +3,15 @@ import { isIncludedAvailabilityType, normalizeServiceKey } from "../features/myS
 
 const IMDB_LOGO_SRC = "/src/assets/IMDBlogos/IMDb_PrimaryLogo_Black.svg";
 
+export function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
 export function renderStatus(container, message, kind = "") {
     container.innerHTML = "";
     const p = document.createElement("p");
@@ -310,6 +319,196 @@ export function renderLeaderboard(container, payload = {}) {
     });
 
     container.appendChild(list);
+}
+
+export function renderQueueImportPrompt(container, options = {}) {
+    const hasExistingBatch = Boolean(options.hasExistingBatch);
+
+    container.innerHTML = `
+        <section class="queue-panel queue-panel-hero">
+            <p class="queue-kicker">Personal setup</p>
+            <h2>Import IMDb Ratings to Build Your Cozy Queue</h2>
+            <p class="queue-copy">Upload your IMDb ratings CSV and rate familiar movies for coziness one at a time.</p>
+            <div class="queue-note-list">
+                <p>Imports movie ratings only for now.</p>
+                <p>Saves your queue on this device.</p>
+                <p>Lets you rate, skip, and resume later.</p>
+            </div>
+            <div class="queue-primary-actions">
+                <button type="button" class="primary-btn queue-upload-btn" data-action="queue-upload">${hasExistingBatch ? "Replace Current Cozy Queue" : "Upload IMDb Ratings CSV"}</button>
+            </div>
+        </section>
+    `;
+}
+
+export function renderQueueImportPreview(container, payload = {}) {
+    const summary = payload.summary || {};
+    const hasExistingBatch = Boolean(payload.hasExistingBatch);
+    const skippedRows = (summary.skippedMissingId || 0) + (summary.skippedInvalid || 0);
+    const fileName = escapeHtml(payload.fileName || "your IMDb ratings file");
+    const importableMovies = Number(summary.importableMovies || 0);
+
+    container.innerHTML = `
+        <section class="queue-panel">
+            <p class="queue-kicker">Import preview</p>
+            <h2>${hasExistingBatch ? "Ready to replace your current queue" : "Ready to build your Cozy Queue"}</h2>
+            <p class="queue-copy">We found ${importableMovies} movie${importableMovies === 1 ? "" : "s"} in ${fileName}. TV titles and rows without IMDb IDs were skipped.</p>
+            ${hasExistingBatch ? `
+                <div class="queue-warning" role="status">
+                    <strong>Start a new Cozy Queue?</strong>
+                    <p>This will replace the current local queue on this device. Already saved cozy ratings will stay saved.</p>
+                </div>
+            ` : ""}
+            <div class="queue-stat-grid">
+                <article class="queue-stat-card">
+                    <span class="queue-stat-value">${summary.totalRows || 0}</span>
+                    <span class="queue-stat-label">Rows found</span>
+                </article>
+                <article class="queue-stat-card queue-stat-card-strong">
+                    <span class="queue-stat-value">${summary.importableMovies || 0}</span>
+                    <span class="queue-stat-label">Movies ready</span>
+                </article>
+                <article class="queue-stat-card">
+                    <span class="queue-stat-value">${summary.skippedNonMovie || 0}</span>
+                    <span class="queue-stat-label">TV titles skipped</span>
+                </article>
+                <article class="queue-stat-card">
+                    <span class="queue-stat-value">${skippedRows}</span>
+                    <span class="queue-stat-label">Rows skipped</span>
+                </article>
+            </div>
+            <div class="queue-primary-actions">
+                <button type="button" class="primary-btn" data-action="queue-confirm-import">${hasExistingBatch ? "Replace and Start" : "Start Cozy Queue"}</button>
+                <button type="button" class="queue-secondary-btn" data-action="queue-upload">Choose Another File</button>
+                ${hasExistingBatch ? '<button type="button" class="queue-tertiary-btn" data-action="queue-cancel-preview">Cancel</button>' : ""}
+            </div>
+        </section>
+    `;
+}
+
+export function renderCozyQueueState(container, payload = {}) {
+    const movie = payload.movie;
+    if (!movie) {
+        renderStatus(container, "No movie is ready for rating.", "empty");
+        return;
+    }
+
+    const genres = Array.isArray(movie.genres) ? movie.genres.filter(Boolean) : [];
+    const genreMarkup = genres.length
+        ? `<div class="queue-genre-row">${genres.slice(0, 3).map((genre) => `<span class="queue-genre-chip">${escapeHtml(genre)}</span>`).join("")}</div>`
+        : "";
+
+    const cozyControls = Array.from({ length: 10 }, (_, index) => {
+        const score = index + 1;
+        return `<button type="button" class="cozy-chip queue-cozy-chip${payload.selectedScore === score ? " is-selected" : ""}" data-action="queue-score-select" data-score="${score}" role="radio" aria-checked="${payload.selectedScore === score ? "true" : "false"}" ${payload.isSaving ? "disabled" : ""}>${score}</button>`;
+    }).join("");
+    const totalCount = payload.totalCount || 0;
+    const ratedCount = payload.ratedCount || 0;
+    const skippedCount = payload.skippedCount || 0;
+    const remainingCount = payload.remainingCount || Math.max(0, totalCount - ratedCount - skippedCount);
+    const currentPosition = payload.isReviewingSkipped
+        ? Math.max(1, (payload.reviewTotal || remainingCount || 1) - remainingCount + 1)
+        : Math.min(totalCount || 1, ratedCount + skippedCount + 1);
+    const progressPercent = totalCount ? Math.min(100, Math.max(0, ((ratedCount + skippedCount) / totalCount) * 100)) : 0;
+    const contextLabel = payload.isReviewingSkipped
+        ? "Skipped Review"
+        : "Imported from your IMDb ratings";
+    const progressTitle = payload.isReviewingSkipped
+        ? `Skipped movie ${currentPosition} of ${payload.reviewTotal || remainingCount || 1}`
+        : `Movie ${currentPosition} of ${totalCount}`;
+    const helperText = Number.isInteger(payload.selectedScore)
+        ? `Selected ${payload.selectedScore}/10`
+        : "Pick a cozy score to continue.";
+    const imdbId = escapeHtml(movie.imdbId);
+    const movieId = escapeHtml(movie.id);
+    const posterUrl = escapeHtml(movie.posterUrl || NO_POSTER_URL);
+    const title = escapeHtml(movie.title || "Untitled movie");
+    const year = escapeHtml(movie.year || "Year unknown");
+    const runtime = movie.runtimeMins ? ` · ${escapeHtml(movie.runtimeMins)} mins` : "";
+    const imdbUserRating = escapeHtml(movie.imdbUserRating || "Unrated");
+    const feedbackTone = payload.feedbackTone ? escapeHtml(payload.feedbackTone) : "";
+    const feedbackMessage = escapeHtml(payload.feedbackMessage || "");
+
+    container.innerHTML = `
+        <section class="queue-progress-bar">
+            <div class="queue-progress-main">
+                <p class="queue-kicker">Cozy Queue</p>
+                <h2>${progressTitle}</h2>
+                <div class="queue-progress-track" aria-hidden="true">
+                    <span style="width: ${progressPercent}%"></span>
+                </div>
+            </div>
+            <div class="queue-progress-summary" aria-label="Queue progress">
+                <span>${ratedCount} rated</span>
+                <span>${skippedCount} skipped</span>
+                <span>${remainingCount} left</span>
+                <strong>Saved on this device</strong>
+            </div>
+        </section>
+        <article class="queue-movie-card" data-imdb-id="${imdbId}" data-movie-id="${movieId}">
+            <div class="queue-poster-wrap">
+                <img src="${posterUrl}" alt="${title} Poster">
+            </div>
+            <div class="queue-movie-content">
+                <p class="queue-context">${contextLabel}</p>
+                <h3 class="queue-movie-title">${title}</h3>
+                <p class="queue-movie-meta">${year}${runtime}</p>
+                ${genreMarkup}
+                <div class="queue-imdb-pill">Your IMDb rating: ${imdbUserRating}/10</div>
+                <h4 class="queue-rating-question">How cozy is this movie?</h4>
+                <div class="queue-scale-copy">
+                    <span>1 = Not cozy</span>
+                    <span>10 = Peak cozy</span>
+                </div>
+                <div class="cozy-chip-grid queue-chip-grid" role="radiogroup" aria-label="Select cozy score for ${title}">
+                    ${cozyControls}
+                </div>
+                <p class="queue-score-helper">${escapeHtml(helperText)}</p>
+                <div class="queue-action-row">
+                    <button type="button" class="primary-btn queue-save-btn" data-action="queue-save" ${(Number.isInteger(payload.selectedScore) && !payload.isSaving) ? "" : "disabled"}>${payload.isSaving ? "Saving..." : "Save and Next"}</button>
+                    <button type="button" class="queue-secondary-btn" data-action="queue-skip" ${payload.isSaving ? "disabled" : ""}>Skip</button>
+                    <button type="button" class="queue-tertiary-btn" data-action="queue-exit" ${payload.isSaving ? "disabled" : ""}>Exit</button>
+                </div>
+                <p class="queue-feedback${feedbackTone ? ` is-${feedbackTone}` : ""}" aria-live="polite">${feedbackMessage}</p>
+            </div>
+        </article>
+    `;
+}
+
+export function renderCozyQueueCompletion(container, payload = {}) {
+    const skippedCount = payload.skippedCount || 0;
+    const ratedCount = payload.ratedCount || 0;
+    const totalCount = payload.totalCount || ratedCount + skippedCount;
+    const completionCopy = skippedCount
+        ? `You rated ${ratedCount} movie${ratedCount === 1 ? "" : "s"} for coziness. ${skippedCount} movie${skippedCount === 1 ? " was" : "s were"} skipped and can be reviewed anytime.`
+        : `You rated all ${ratedCount} imported movie${ratedCount === 1 ? "" : "s"}. Your cozy ratings are ready on the leaderboard.`;
+
+    container.innerHTML = `
+        <section class="queue-panel queue-panel-complete">
+            <p class="queue-kicker">Queue complete</p>
+            <h2>Queue complete</h2>
+            <p class="queue-copy">${completionCopy}</p>
+            <div class="queue-stat-grid">
+                <article class="queue-stat-card queue-stat-card-strong">
+                    <span class="queue-stat-value">${ratedCount}</span>
+                    <span class="queue-stat-label">Rated</span>
+                </article>
+                <article class="queue-stat-card">
+                    <span class="queue-stat-value">${skippedCount}</span>
+                    <span class="queue-stat-label">Skipped</span>
+                </article>
+                <article class="queue-stat-card">
+                    <span class="queue-stat-value">${totalCount}</span>
+                    <span class="queue-stat-label">Imported</span>
+                </article>
+            </div>
+            <div class="queue-primary-actions">
+                ${skippedCount ? '<button type="button" class="primary-btn" data-action="queue-review-skipped">Review Skipped</button>' : ""}
+                <button type="button" class="${skippedCount ? "queue-secondary-btn" : "primary-btn"}" data-action="queue-go-leaderboard">View Leaderboard</button>
+                <button type="button" class="queue-tertiary-btn" data-action="queue-import-new">Import Another IMDb File</button>
+            </div>
+        </section>
+    `;
 }
 
 export function updateCardCoziness(card, score) {

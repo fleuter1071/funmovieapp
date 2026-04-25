@@ -31,6 +31,10 @@ export async function getStreamingInfo(imdbId, title, year = "") {
     return fetchJson(`/streaming?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}&year=${encodeURIComponent(year)}`);
 }
 
+export async function getMovieMetadata(imdbId, title = "", year = "") {
+    return fetchJson(`/movie-metadata?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}&year=${encodeURIComponent(year)}`);
+}
+
 export async function getTrailerInfo(imdbId, title) {
     return fetchJson(`/trailer?imdbId=${encodeURIComponent(imdbId)}&title=${encodeURIComponent(title)}`);
 }

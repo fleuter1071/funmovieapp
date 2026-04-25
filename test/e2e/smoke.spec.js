@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const path = require("path");
 
 test.beforeEach(async ({ page, request, baseURL }) => {
     await request.post(`${baseURL}/__e2e/reset`);
@@ -84,3 +85,39 @@ test("leaderboard loads, filters by genre, and re-sorts", async ({ page }) => {
     await expect(page.locator(".leaderboard-row")).toHaveCount(2);
     await expect(page.locator(".leaderboard-row").first()).toContainText("Groundhog Day");
 });
+
+test("IMDb import builds a Cozy Queue, persists progress, and lets skipped movies be reviewed", async ({ page }) => {
+    const fixturePath = path.join(__dirname, "fixtures", "imdb-ratings.csv");
+
+    await page.goto("/");
+    await page.locator('.bottom-nav-btn[data-tab="queue"]').click();
+    await expect(page.getByRole("heading", { name: "Import IMDb Ratings to Build Your Cozy Queue" })).toBeVisible();
+
+    await page.locator("#imdbImportInput").setInputFiles(fixturePath);
+    await expect(page.getByText("3")).toBeVisible();
+    await expect(page.getByText("2", { exact: true })).toBeVisible();
+    await expect(page.getByText("TV titles skipped")).toBeVisible();
+
+    await page.getByRole("button", { name: "Start Cozy Queue" }).click();
+    await expect(page.getByRole("heading", { name: "Movie 1 of 2" })).toBeVisible();
+    await expect(page.locator(".queue-movie-card")).toContainText("Scream");
+
+    await page.locator('.queue-cozy-chip[data-score="7"]').click();
+    await page.getByRole("button", { name: "Save and Next" }).click();
+    await expect(page.getByRole("heading", { name: "Movie 2 of 2" })).toBeVisible();
+    await expect(page.locator(".queue-movie-card")).toContainText("Groundhog Day");
+
+    await page.reload();
+    await page.locator('.bottom-nav-btn[data-tab="queue"]').click();
+    await expect(page.getByRole("heading", { name: "Movie 2 of 2" })).toBeVisible();
+    await expect(page.locator(".queue-movie-card")).toContainText("Groundhog Day");
+
+    await page.getByRole("button", { name: "Skip" }).click();
+    await expect(page.getByRole("heading", { name: "Queue complete" })).toBeVisible();
+    await expect(page.locator(".queue-stat-card").filter({ has: page.getByText("Rated") }).getByText("1", { exact: true })).toBeVisible();
+    await expect(page.locator(".queue-stat-card").filter({ has: page.getByText("Skipped") }).getByText("1", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Review Skipped" }).click();
+    await expect(page.getByRole("heading", { name: "Skipped movie 1 of 1" })).toBeVisible();
+    await expect(page.locator(".queue-movie-card")).toContainText("Groundhog Day");
+  });

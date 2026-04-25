@@ -42,6 +42,15 @@
                 </label>
             </section>
 
+            <section class="queue-launcher" aria-label="Cozy Queue launcher">
+                <div class="queue-launcher-copy">
+                    <p class="queue-launcher-eyebrow">New</p>
+                    <h2>Import IMDb Ratings to Build Your Cozy Queue</h2>
+                    <p id="queueLauncherMeta" class="queue-launcher-meta">Upload your IMDb ratings, then move through your movies quickly and add cozy scores one at a time. Saved locally on this device for now.</p>
+                </div>
+                <button id="openQueueButton" class="queue-launcher-btn" type="button">Open Cozy Queue</button>
+            </section>
+
             <section class="results-section" aria-label="Search results">
                 <div id="resultsHead" class="results-head" hidden>
                     <h2>Results</h2>
@@ -50,6 +59,10 @@
                 <div id="results" class="results-grid" aria-live="polite"></div>
                 <div id="discoverFilterState" class="discover-filter-state" hidden></div>
             </section>
+        </section>
+
+        <section id="cozyQueueView" class="app-view cozy-queue-view" aria-label="Cozy queue view" hidden>
+            <div id="cozyQueueContent" class="cozy-queue-content" aria-live="polite"></div>
         </section>
 
         <section id="leaderboardView" class="app-view leaderboard-view" aria-label="Coziness leaderboard view" hidden>
@@ -74,8 +87,11 @@
 
     <nav class="bottom-nav" aria-label="Primary navigation">
         <button type="button" class="bottom-nav-btn is-active" data-tab="discover" aria-selected="true">Discover</button>
+        <button type="button" class="bottom-nav-btn" data-tab="queue" aria-selected="false">Cozy Queue</button>
         <button type="button" class="bottom-nav-btn" data-tab="leaderboard" aria-selected="false">Leaderboard</button>
     </nav>
+
+    <input id="imdbImportInput" type="file" accept=".csv,text/csv" hidden>
 
     <div id="servicesSheetBackdrop" class="services-sheet-backdrop" hidden></div>
     <section id="servicesSheet" class="services-sheet" role="dialog" aria-modal="true" aria-labelledby="servicesSheetTitle" hidden>

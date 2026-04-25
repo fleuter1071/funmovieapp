@@ -370,3 +370,138 @@ Added Playwright-based browser smoke coverage for the core Discover and Leaderbo
 1. Optionally add Playwright artifact paths to `.gitignore`.
 2. Add one or two mobile-width smoke scenarios for the services sheet and card interactions.
 3. Later, add a very small production-backed smoke suite for critical routes if live integration confidence becomes important.
+
+## Date/time
+2026-04-04 01:45:00 -04:00
+
+## Feature name
+Browser Smoke Coverage, Visual Test Commands, Upstream Failure Hardening, and Production Push
+
+## Summary
+Completed a combined quality and reliability pass across the repo. Added Playwright browser smoke coverage for the main user flows, added optional visible Playwright commands for live viewing, updated docs and repo memory to reflect the new test workflow, hardened the backend's movie-provider failure handling, pushed the changes to `main`, and then investigated the new production logs to separate app behavior from upstream provider behavior.
+
+## Files changed
+- C:\Users\dougs\Movie_Fun_Codex\.gitignore
+- C:\Users\dougs\Movie_Fun_Codex\AGENTS.md
+- C:\Users\dougs\Movie_Fun_Codex\PROJECT_MEMORY.md
+- C:\Users\dougs\Movie_Fun_Codex\package.json
+- C:\Users\dougs\Movie_Fun_Codex\package-lock.json
+- C:\Users\dougs\Movie_Fun_Codex\playwright.config.js
+- C:\Users\dougs\Movie_Fun_Codex\server\app.js
+- C:\Users\dougs\Movie_Fun_Codex\server\services\imdbService.js
+- C:\Users\dougs\Movie_Fun_Codex\test\api.test.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\mockServer.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\smoke.spec.js
+
+## Technical Architecture changes or key technical decisions made
+- Added Playwright as a dev dependency and kept browser tests isolated from the Node test runner by scoping `npm test` to `test/*.test.js` and `test/*.test.mjs`.
+- Added Playwright config plus a deterministic local mock Express server so browser tests exercise the real frontend with stable test data instead of live third-party APIs.
+- Added browser smoke coverage for search, trailer popup, Where to Watch expansion, cozy save, My Services filtering, and leaderboard load/filter/sort flows.
+- Added optional visual commands: `npm run test:e2e:headed` and `npm run test:e2e:ui`.
+- Added `.gitignore` entries for Playwright artifact folders to reduce working-tree noise.
+- Increased upstream movie-provider search timeout from 5s to 8s and retries from 1 to 2 to make production search less brittle.
+- Increased readiness timeout from 3s to 6s.
+- Added structured upstream failure metadata (`failureType`, `upstreamStatus` when available) to error responses and server logs so production incidents are easier to diagnose.
+- Updated user-facing backend messages for search/readiness outages to explain that the movie data provider is temporarily unavailable rather than only saying the app failed.
+- Committed and pushed the combined changes to `main` with commit `ff056df`.
+
+## Assumptions
+- Deterministic mocked browser coverage is the right first layer of frontend regression protection for this repo.
+- Visual Playwright commands are helpful for demos and debugging but should remain optional rather than replacing the default headless command.
+- Better upstream logging and a more honest error contract improve operability even before the app has a backup movie search provider.
+- The current production deployment is auto-updating from `main`.
+
+## Known limitations
+- The browser suite still uses mocked backend data and does not validate live third-party movie provider behavior.
+- The production app still has a single search-provider dependency, so true provider outages still take search down.
+- Render logs after deployment showed the upstream search provider returning `404` for broad normal queries like `friday`, `predator`, `christmas story`, and `christmas`, which indicates an upstream provider problem beyond the app's own behavior.
+- Search currently still classifies upstream `404` as an upstream failure rather than an empty search state. That remains a likely next UX hardening step if desired.
+
+## Key learnings that you can bring with you to future sessions
+- Playwright coverage is valuable in this repo because core quality risks are UI-driven and involve real browser behavior such as panels, localStorage, and view switching.
+- Browser smoke suites are much easier to keep reliable when they run against a local deterministic mock server instead of unstable third-party APIs.
+- Production incident debugging became much clearer once upstream failures were logged with a machine-readable failure type and optional status.
+- The current external movie search provider is a major product reliability risk: recent Render logs showed the service reachable but returning `404` for many normal search terms, which is different from a network outage and points to an upstream quality problem.
+- Better app messaging can reduce confusion, but it does not remove the underlying single-point-of-failure risk in search.
+
+## Remaining TODOs
+- Consider changing upstream search `404` handling to return an empty result set instead of a hard outage so typo/no-match experiences are less misleading.
+- Add a backup movie search provider or fallback strategy so the app is not fully blocked by the current unofficial provider.
+- Add mobile-width browser smoke scenarios and more degraded/error-state browser checks.
+- Consider production-backed smoke checks for a very small set of live routes once the search-provider strategy is clearer.
+
+## Next steps
+1. Decide whether to patch search so upstream `404` becomes an empty-result UX instead of an outage UX.
+2. Evaluate a fallback or replacement provider for primary search because current production logs show broad upstream search instability.
+3. After the next deploy cycle, re-check Render logs and production readiness/search behavior using the new structured upstream error details.
+
+## Date/time
+2026-04-04 16:45:00 -04:00
+
+## Feature name, description, and value provided
+IMDb Import Cozy Queue MVP
+Description: Added a dedicated local-first IMDb import flow that turns a user's IMDb ratings CSV into a personal Cozy Queue, where they can rate imported movies one at a time for coziness, skip titles, resume later, and review skipped items.
+Value provided: Removes the need to search and rate movies one by one, helping users build a meaningful cozy profile much faster from movie history they already have.
+
+## Summary/Overview of work
+Implemented a new `Cozy Queue` feature set centered around the product framing `Import IMDb Ratings to Build Your Cozy Queue`. Added a new Discover launcher plus a dedicated queue view in the app shell. Built local CSV parsing for IMDb ratings exports, filtered imports to movie rows only, added an import preview state, created structured local storage for import batches / imported movie records / queue state, and wired a one-at-a-time queue interaction with `Save and Next`, `Skip`, `Exit`, resume, completion, and review-skipped flows. Reused the existing cozy save API for actual cozy ratings so imported queue ratings stay consistent with the rest of the app. After local QA, fixed a product-quality issue where queue cards initially showed blank poster areas by adding lightweight movie metadata hydration for imported titles. Added unit coverage for parsing/storage and browser smoke coverage for the import-to-queue flow. Added a dedicated feature brief file to preserve direction and future-phase planning.
+
+## Files changed
+- C:\Users\dougs\Movie_Fun_Codex\index.html
+- C:\Users\dougs\Movie_Fun_Codex\src\main.js
+- C:\Users\dougs\Movie_Fun_Codex\src\ui\renderers.js
+- C:\Users\dougs\Movie_Fun_Codex\styles\main.css
+- C:\Users\dougs\Movie_Fun_Codex\src\features\imdbImport.mjs
+- C:\Users\dougs\Movie_Fun_Codex\src\features\importStorage.mjs
+- C:\Users\dougs\Movie_Fun_Codex\src\api\client.js
+- C:\Users\dougs\Movie_Fun_Codex\server\app.js
+- C:\Users\dougs\Movie_Fun_Codex\server\services\imdbService.js
+- C:\Users\dougs\Movie_Fun_Codex\test\imdb-import.test.mjs
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\smoke.spec.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\mockServer.js
+- C:\Users\dougs\Movie_Fun_Codex\test\e2e\fixtures\imdb-ratings.csv
+- C:\Users\dougs\Movie_Fun_Codex\COZY_IMPORT_FEATURE_SET.md
+- C:\Users\dougs\Movie_Fun_Codex\PROJECT_MEMORY.md
+
+## Technical Architecture changes or key technical decisions made
+- Added a third main frontend view, `Cozy Queue`, rather than mixing imported-rating work into Discover.
+- Kept Phase 1 local-first by storing import batches, imported movie records, and queue progress in browser storage instead of adding accounts or backend persistence first.
+- Structured the local data model as if it were already user-owned data so a later migration to account-backed storage can be straightforward.
+- Used IMDb `Const` / IMDb ID from the export as the primary imported identifier, avoiding fuzzy title matching as the main import path.
+- Reused the existing cozy save API for queue ratings instead of creating a separate queue-specific cozy persistence path.
+- Added a narrow backend `movie-metadata` lookup path so imported queue items can hydrate poster metadata and core movie details when the local import record does not contain a poster URL.
+- Added a test-only option to disable rate limiting in the Playwright mock server so the expanded browser smoke suite remains deterministic without changing production behavior.
+
+## Assumptions
+- The supported IMDb export remains CSV-based and continues to include stable IMDb IDs in the `Const` column.
+- Phase 1 value is still worth testing before introducing accounts, sync, or personalized recommendations.
+- Movies are the only import target for now; TV titles are intentionally skipped rather than partially supported.
+- Replacing the current local queue on re-import is acceptable for MVP and preferable to introducing merge/conflict behavior too early.
+- Existing cozy rating semantics remain global last-write-wins even when ratings come through the queue flow.
+
+## Known limitations
+- Queue progress and imported history are local to the current browser/device only.
+- There is no account ownership, cloud sync, or cross-device resume yet.
+- TV Series rows are skipped and not supported in the queue flow.
+- Re-import currently replaces the current local queue instead of preserving multiple user-manageable import batches.
+- Queue poster hydration depends on upstream metadata lookup success; if lookup fails, the queue still works but may fall back to placeholder presentation.
+- There is no advanced manual match-correction UI or deep import-management dashboard in this phase.
+
+## Key learnings that you can bring with you to future sessions
+- A dedicated queue page is the right UX shape for this task; trying to embed imported-rating work inside Discover would have made the flow feel cluttered and unnatural.
+- The actual product value is not the file upload itself; it is the fast post-import one-movie-at-a-time cozy-rating loop.
+- Designing Phase 1 local storage as structured user-like data is important because it preserves a clean path to Phase 2 account migration.
+- Imported IMDb data rarely includes everything needed for a polished card, so lightweight metadata hydration is worth doing even in an otherwise local-first flow.
+- Browser smoke coverage is especially useful for this feature because the important behaviors are UI-driven: file upload, queue progression, persistence, reload/resume, and completion states.
+
+## Remaining TODOs
+- Decide whether to keep the current single active local queue model or preserve multiple local import batches in a later Phase 1.x refinement.
+- Add more UX polish to the Cozy Queue page, especially progress language, completion copy, and skipped-review states.
+- Plan the Phase 2 account model and the local-to-account migration flow for imported batches and queue progress.
+- Decide how re-import should behave long-term once accounts exist: replace, merge, or allow multiple import sets.
+- Explore Phase 3 personalized discovery ideas once enough imported + cozy data exists to make them meaningful.
+
+## Next steps
+1. Use `COZY_IMPORT_FEATURE_SET.md` as the main resume brief for future sessions on this feature.
+2. Decide whether the next work slice should be Phase 1 UX polish, local data/refinement work, or Phase 2 account planning.
+3. If continuing implementation soon, start by reviewing the current queue flow in `src/main.js`, `src/features/imdbImport.mjs`, and `src/features/importStorage.mjs`.

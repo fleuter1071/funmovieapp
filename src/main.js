@@ -1,7 +1,21 @@
-import { getCozinessRatingsBatch, getLeaderboard, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
+import { getCozinessRatingsBatch, getLeaderboard, getMovieMetadata, getStreamingInfo, getTrailerInfo, saveCozinessRating, searchMovies } from "./api/client.js";
 import { createDiscoverServicesController } from "./features/discoverServices.mjs";
+import { parseImdbRatingsCsv } from "./features/imdbImport.mjs";
+import {
+    getCurrentQueueMovie,
+    getQueueSummary,
+    markImportedMovieRated,
+    markImportedMovieSkipped,
+    replaceImportBatch,
+    restoreSkippedMovies,
+    updateImportedMovieMetadata
+} from "./features/importStorage.mjs";
 import { getMatchingServiceLabels } from "./features/myServices.mjs";
 import {
+    renderCozyQueueCompletion,
+    renderCozyQueueState,
+    renderQueueImportPreview,
+    renderQueueImportPrompt,
     renderLeaderboard,
     renderLoadingSkeletons,
     renderMovies,
@@ -20,11 +34,16 @@ const resultsMeta = document.getElementById("resultsMeta");
 const discoverFilterState = document.getElementById("discoverFilterState");
 const tabButtons = [...document.querySelectorAll("[data-tab]")];
 const searchView = document.getElementById("searchView");
+const cozyQueueView = document.getElementById("cozyQueueView");
+const cozyQueueContent = document.getElementById("cozyQueueContent");
 const leaderboardView = document.getElementById("leaderboardView");
 const leaderboardResults = document.getElementById("leaderboardResults");
 const leaderboardMeta = document.getElementById("leaderboardMeta");
 const leaderboardGenre = document.getElementById("leaderboardGenre");
 const leaderboardSort = document.getElementById("leaderboardSort");
+const openQueueButton = document.getElementById("openQueueButton");
+const queueLauncherMeta = document.getElementById("queueLauncherMeta");
+const imdbImportInput = document.getElementById("imdbImportInput");
 const myServicesButton = document.getElementById("myServicesButton");
 const includedOnlyWrap = document.getElementById("includedOnlyWrap");
 const includedOnlyInput = document.getElementById("includedOnlyInput");
@@ -39,6 +58,19 @@ const cozyAutoCloseTimers = new WeakMap();
 const leaderboardState = {
     genre: "all",
     sortOrder: "desc"
+};
+
+const queueUiState = {
+    preview: null,
+    selectedScore: null,
+    feedbackMessage: "",
+    feedbackTone: "",
+    isSaving: false,
+    metadataLoading: false,
+    flashMessage: "",
+    flashTone: "",
+    reviewingSkipped: false,
+    reviewTotal: 0
 };
 
 const discoverServices = createDiscoverServicesController({
@@ -75,6 +107,15 @@ function setResultsHeadVisible(isVisible) {
     }
 }
 
+function setQueueFlash(message = "", tone = "") {
+    queueUiState.flashMessage = message;
+    queueUiState.flashTone = tone;
+}
+
+function clearQueueFlash() {
+    setQueueFlash("", "");
+}
+
 function setSearchPending(isPending) {
     searchButton.disabled = isPending;
     searchButton.textContent = isPending ? "Searching..." : "Search";
@@ -97,10 +138,17 @@ function setLeaderboardMeta(message) {
 }
 
 function setActiveView(view) {
-    const next = view === "leaderboard" ? "leaderboard" : "discover";
+    const next = view === "leaderboard"
+        ? "leaderboard"
+        : view === "queue"
+            ? "queue"
+            : "discover";
 
     if (searchView) {
         searchView.hidden = next !== "discover";
+    }
+    if (cozyQueueView) {
+        cozyQueueView.hidden = next !== "queue";
     }
     if (leaderboardView) {
         leaderboardView.hidden = next !== "leaderboard";
@@ -114,6 +162,182 @@ function setActiveView(view) {
 
     if (next === "leaderboard") {
         loadLeaderboard();
+    } else if (next === "queue") {
+        renderQueueView();
+    }
+}
+
+function updateQueueLauncher() {
+    const summary = getQueueSummary();
+    if (!openQueueButton || !queueLauncherMeta) {
+        return;
+    }
+
+    if (!summary.batch) {
+        openQueueButton.textContent = "Open Cozy Queue";
+        queueLauncherMeta.textContent = "Upload your IMDb ratings and rate familiar movies for coziness one at a time. Saved locally on this device for now.";
+        return;
+    }
+
+    openQueueButton.textContent = summary.remainingCount > 0 ? "Continue Cozy Queue" : "Open Cozy Queue";
+    queueLauncherMeta.textContent = `${summary.ratedCount} rated, ${summary.skippedCount} skipped, ${summary.remainingCount} left. Saved locally on this device for now.`;
+}
+
+function injectQueueFlashMessage() {
+    if (!cozyQueueContent || !queueUiState.flashMessage) {
+        return;
+    }
+
+    const flash = document.createElement("p");
+    flash.className = `message${queueUiState.flashTone ? ` is-${queueUiState.flashTone}` : ""}`;
+    flash.textContent = queueUiState.flashMessage;
+    cozyQueueContent.prepend(flash);
+}
+
+function renderQueueView() {
+    if (!cozyQueueContent) {
+        return;
+    }
+
+    const summary = getQueueSummary();
+
+    if (queueUiState.preview) {
+        renderQueueImportPreview(cozyQueueContent, {
+            fileName: queueUiState.preview.sourceName,
+            summary: queueUiState.preview.summary,
+            hasExistingBatch: Boolean(summary.batch)
+        });
+        injectQueueFlashMessage();
+        return;
+    }
+
+    if (!summary.batch) {
+        renderQueueImportPrompt(cozyQueueContent, { hasExistingBatch: false });
+        injectQueueFlashMessage();
+        return;
+    }
+
+    if (summary.remainingCount === 0) {
+        renderCozyQueueCompletion(cozyQueueContent, summary);
+        injectQueueFlashMessage();
+        return;
+    }
+
+    const currentMovie = getCurrentQueueMovie();
+    renderCozyQueueState(cozyQueueContent, {
+        movie: currentMovie,
+        selectedScore: queueUiState.selectedScore,
+        ratedCount: summary.ratedCount,
+        skippedCount: summary.skippedCount,
+        remainingCount: summary.remainingCount,
+        totalCount: summary.totalCount,
+        isReviewingSkipped: queueUiState.reviewingSkipped,
+        reviewTotal: queueUiState.reviewTotal,
+        feedbackMessage: queueUiState.feedbackMessage,
+        feedbackTone: queueUiState.feedbackTone,
+        isSaving: queueUiState.isSaving || queueUiState.metadataLoading
+    });
+    injectQueueFlashMessage();
+
+    if (currentMovie && !String(currentMovie.posterUrl || "").trim()) {
+        hydrateQueueMovieMetadata(currentMovie);
+    }
+}
+
+function openImportPicker() {
+    if (!imdbImportInput) {
+        return;
+    }
+    imdbImportInput.value = "";
+    imdbImportInput.click();
+}
+
+async function handleImportFileSelection(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+        return;
+    }
+
+    clearQueueFlash();
+    queueUiState.feedbackMessage = "";
+    queueUiState.feedbackTone = "";
+
+    try {
+        const text = await file.text();
+        queueUiState.preview = parseImdbRatingsCsv(text, { sourceName: file.name });
+        queueUiState.selectedScore = null;
+        setActiveView("queue");
+    } catch (error) {
+        queueUiState.preview = null;
+        setQueueFlash(error.message || "This IMDb file could not be imported.", "error");
+        setActiveView("queue");
+    }
+}
+
+function updateVisibleCardScore(imdbId, score) {
+    const card = results.querySelector(`.movie-card[data-imdb-id="${CSS.escape(imdbId)}"]`);
+    if (!card) {
+        return;
+    }
+    updateCardCoziness(card, score);
+}
+
+async function persistQueueRating() {
+    const movie = getCurrentQueueMovie();
+    const score = Number(queueUiState.selectedScore);
+    if (!movie?.imdbId || !Number.isInteger(score) || score < 1 || score > 10 || queueUiState.isSaving) {
+        return;
+    }
+
+    clearQueueFlash();
+    queueUiState.isSaving = true;
+    queueUiState.feedbackMessage = "Saving...";
+    queueUiState.feedbackTone = "";
+    renderQueueView();
+
+    try {
+        const payload = await saveCozinessRating(movie.imdbId, score, {
+            imdbId: movie.imdbId,
+            title: movie.title,
+            year: movie.year,
+            genres: movie.genres
+        });
+        const savedScore = Number(payload?.data?.score);
+        const nextScore = Number.isInteger(savedScore) ? savedScore : score;
+        markImportedMovieRated(movie.imdbId, nextScore);
+        updateVisibleCardScore(movie.imdbId, nextScore);
+        queueUiState.selectedScore = null;
+        queueUiState.feedbackMessage = "Saved. Next movie loaded.";
+        queueUiState.feedbackTone = "success";
+        updateQueueLauncher();
+    } catch (error) {
+        queueUiState.feedbackMessage = "Could not save this cozy score. Try again.";
+        queueUiState.feedbackTone = "error";
+    } finally {
+        queueUiState.isSaving = false;
+        renderQueueView();
+    }
+}
+
+async function hydrateQueueMovieMetadata(movie) {
+    if (!movie?.imdbId || queueUiState.metadataLoading) {
+        return;
+    }
+
+    queueUiState.metadataLoading = true;
+    renderQueueView();
+
+    try {
+        const payload = await getMovieMetadata(movie.imdbId, movie.title, movie.year ? String(movie.year) : "");
+        const data = payload?.data;
+        if (data?.imdbId) {
+            updateImportedMovieMetadata(movie.imdbId, data);
+        }
+    } catch (error) {
+        // Keep the queue usable even if metadata hydration fails.
+    } finally {
+        queueUiState.metadataLoading = false;
+        renderQueueView();
     }
 }
 
@@ -607,6 +831,17 @@ searchForm.addEventListener("submit", (event) => {
     handleSearch();
 });
 
+if (openQueueButton) {
+    openQueueButton.addEventListener("click", () => {
+        clearQueueFlash();
+        setActiveView("queue");
+    });
+}
+
+if (imdbImportInput) {
+    imdbImportInput.addEventListener("change", handleImportFileSelection);
+}
+
 if (leaderboardSort) {
     leaderboardSort.addEventListener("change", () => {
         leaderboardState.sortOrder = leaderboardSort.value === "asc" ? "asc" : "desc";
@@ -623,10 +858,110 @@ if (leaderboardGenre) {
 
 tabButtons.forEach((tab) => {
     tab.addEventListener("click", () => {
-        const view = tab.dataset.tab === "leaderboard" ? "leaderboard" : "discover";
+        const view = tab.dataset.tab === "leaderboard"
+            ? "leaderboard"
+            : tab.dataset.tab === "queue"
+                ? "queue"
+                : "discover";
         setActiveView(view);
     });
 });
+
+if (cozyQueueContent) {
+    cozyQueueContent.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) {
+            return;
+        }
+
+        const action = button.dataset.action;
+
+        if (action === "queue-upload" || action === "queue-import-new") {
+            clearQueueFlash();
+            openImportPicker();
+            return;
+        }
+
+        if (action === "queue-confirm-import") {
+            if (!queueUiState.preview) {
+                return;
+            }
+            replaceImportBatch(queueUiState.preview);
+            queueUiState.preview = null;
+            queueUiState.selectedScore = null;
+            queueUiState.feedbackMessage = "";
+            queueUiState.feedbackTone = "";
+            queueUiState.reviewingSkipped = false;
+            queueUiState.reviewTotal = 0;
+            updateQueueLauncher();
+            renderQueueView();
+            return;
+        }
+
+        if (action === "queue-cancel-preview") {
+            queueUiState.preview = null;
+            queueUiState.selectedScore = null;
+            clearQueueFlash();
+            renderQueueView();
+            return;
+        }
+
+        if (action === "queue-score-select") {
+            const score = Number(button.dataset.score);
+            if (!Number.isInteger(score) || score < 1 || score > 10 || queueUiState.isSaving) {
+                return;
+            }
+            queueUiState.selectedScore = score;
+            queueUiState.feedbackMessage = "";
+            queueUiState.feedbackTone = "";
+            clearQueueFlash();
+            renderQueueView();
+            return;
+        }
+
+        if (action === "queue-save") {
+            persistQueueRating();
+            return;
+        }
+
+        if (action === "queue-skip") {
+            const movie = getCurrentQueueMovie();
+            if (!movie || queueUiState.isSaving) {
+                return;
+            }
+            markImportedMovieSkipped(movie.imdbId);
+            queueUiState.selectedScore = null;
+            queueUiState.feedbackMessage = "Skipped for now. You can review it later.";
+            queueUiState.feedbackTone = "";
+            updateQueueLauncher();
+            renderQueueView();
+            return;
+        }
+
+        if (action === "queue-exit") {
+            setActiveView("discover");
+            return;
+        }
+
+        if (action === "queue-review-skipped") {
+            const summary = getQueueSummary();
+            restoreSkippedMovies();
+            queueUiState.reviewingSkipped = true;
+            queueUiState.reviewTotal = summary.skippedCount || 0;
+            queueUiState.selectedScore = null;
+            clearQueueFlash();
+            queueUiState.feedbackMessage = "Review skipped movies now, or leave them skipped for later.";
+            queueUiState.feedbackTone = "";
+            updateQueueLauncher();
+            renderQueueView();
+            return;
+        }
+
+        if (action === "queue-go-leaderboard") {
+            setActiveView("leaderboard");
+        }
+    });
+}
 
 results.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
@@ -692,6 +1027,7 @@ results.addEventListener("click", (event) => {
 
 setActiveView("discover");
 setResultsHeadVisible(false);
+updateQueueLauncher();
 
 results.addEventListener("keydown", (event) => {
     const chip = event.target.closest(".cozy-chip");
